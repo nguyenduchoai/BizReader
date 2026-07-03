@@ -74,7 +74,15 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
   return false;
 }
 
-bool MappedInputManager::wasPressed(const Button button) const { return mapButton(button, &HalGPIO::wasPressed); }
+bool MappedInputManager::wasPressed(const Button button) const {
+  // Touch boards (e.g. LilyGo T5 EPD47) surface the GT911 capacitive home key
+  // as logical Back — they lack a physical back button (tap = Confirm via the
+  // SDK's synthesizeConfirm, the single key = page navigation).
+  if (button == Button::Back && gpio.hasTouch() && gpio.wasHomeKeyPressed()) {
+    return true;
+  }
+  return mapButton(button, &HalGPIO::wasPressed);
+}
 
 bool MappedInputManager::wasReleased(const Button button) const { return mapButton(button, &HalGPIO::wasReleased); }
 
