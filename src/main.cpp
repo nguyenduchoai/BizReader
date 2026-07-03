@@ -485,7 +485,10 @@ void loop() {
   const unsigned long loopStartTime = millis();
   static unsigned long lastMemPrint = 0;
 
-  gpio.update();
+  // mappedInputManager.update() calls gpio.update() and then, on touch boards,
+  // computes the tap/long-press/swipe gesture edges MappedInputManager::wasPressed()
+  // reads. Calling raw gpio.update() here left those gestures permanently unset.
+  mappedInputManager.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 
   renderer.setFadingFix(SETTINGS.fadingFix);
