@@ -516,9 +516,13 @@ void loop() {
     }
   }
 
-  // Check for any user activity (button press or release) or active background work
+  // Check for any user activity (button press, release, or touch) or active background work.
+  // Touch must be counted explicitly: gestures are synthesized app-side and produce no
+  // button events, so without wasTouchActivity() a touch-only board (LilyGo T5 EPD47)
+  // could never leave the 10 MHz idle clamp (which also drops USB-CDC) and would
+  // auto-sleep mid-use.
   static unsigned long lastActivityTime = millis();
-  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || halTiltSensor.hadActivity() ||
+  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity() ||
       activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity

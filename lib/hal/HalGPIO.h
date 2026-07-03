@@ -99,6 +99,12 @@ class HalGPIO {
   bool isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const;
   // Duration (ms) of the last touch contact, latched on release.
   unsigned long lastTouchHeldMs() const;
+  // Coarse "the user touched the screen" edge (press or release this frame).
+  // The touch analogue of wasAnyPressed/Released: touch produces no button
+  // events (gestures are synthesized app-side), so idle/auto-sleep timers and
+  // the low-power CPU clamp must count this as user activity or a touch-only
+  // board can never wake from the 10 MHz idle mode (which also drops USB-CDC).
+  bool wasTouchActivity() const;
 
   // Setup wake up GPIO and enter deep sleep
   void startDeepSleep();
