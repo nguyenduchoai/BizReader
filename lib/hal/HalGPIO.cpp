@@ -262,6 +262,8 @@ bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) c
   return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
 }
 
+unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
+
 void HalGPIO::startDeepSleep() {
   // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
   while (inputMgr.isPressed(BTN_POWER)) {

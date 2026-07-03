@@ -97,6 +97,8 @@ class HalGPIO {
   bool wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const;
   // In-place contact still a tap candidate; writes the point and the held time.
   bool isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const;
+  // Duration (ms) of the last touch contact, latched on release.
+  unsigned long lastTouchHeldMs() const;
 
   // Setup wake up GPIO and enter deep sleep
   void startDeepSleep();

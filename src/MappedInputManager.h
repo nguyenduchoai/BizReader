@@ -57,10 +57,15 @@ class MappedInputManager {
   //   vertical swipe              -> NavNext / NavPrevious (move list highlight)
   // Direction is resolved in the current logical orientation before mapping to
   // a logical button, so it stays correct as the reader rotates. The synthesized
-  // edges are latched here in update() and OR'd into wasPressed(); they are inert
-  // (never set) on boards without a touch controller, so other platforms are
-  // unaffected. See [[lilygo-t5-epd47-touch-quirks]].
+  // edges are latched here in update() and OR'd into BOTH wasPressed() and
+  // wasReleased() (via touchSynthesizedEdge) so consumers that act on either edge
+  // fire; they are inert (never set) on boards without a touch controller, so
+  // other platforms are unaffected. See [[lilygo-t5-epd47-touch-quirks]].
   void serviceTouchGestures() const;
+
+  // True this frame if `button` was produced by a touch gesture (tap/long-press/
+  // swipe). Shared by wasPressed() and wasReleased(); false on non-touch boards.
+  bool touchSynthesizedEdge(Button button) const;
 
   // Long-press threshold for a stationary contact to synthesize Back.
   static constexpr unsigned long TOUCH_LONGPRESS_MS = 550;

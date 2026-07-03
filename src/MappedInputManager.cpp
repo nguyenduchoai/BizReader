@@ -148,7 +148,9 @@ void MappedInputManager::serviceTouchGestures() const {
   }
 
   // Clear the long-press latch once the contact ends, arming the next contact.
-  if (gpio.wasTouchReleased()) {
+  const bool released = gpio.wasTouchReleased();
+  const bool hadLongPressLatch = longPressLatched;
+  if (released) {
     longPressLatched = false;
   }
 
@@ -156,47 +158,65 @@ void MappedInputManager::serviceTouchGestures() const {
   if (tsConfirm || tsBack || tsNavNext || tsNavPrev || tsPageForward || tsPageBack) {
     LOG_DBG("TOUCH", "gesture: confirm=%d back=%d navNext=%d navPrev=%d pageFwd=%d pageBack=%d", tsConfirm, tsBack,
             tsNavNext, tsNavPrev, tsPageForward, tsPageBack);
+  } else if (released) {
+    // A contact ended but produced no gesture: log why, so a "confirm didn't
+    // fire" report can be diagnosed without guessing. hadLongPressLatch=1 means
+    // long-press already consumed this contact as Back earlier in the hold;
+    // otherwise heldMs small with no tap/swipe means the contact exceeded
+    // TOUCH_TAP_SLOP_PX (28 native px) sometime during the hold — wasTouchTap()'s
+    // moved-beyond-slop latch is permanent for the whole contact, so any brief
+    // jitter anywhere in the hold disables tap-to-Confirm even if the finger
+    // lands back on target before lifting.
+    LOG_DBG("TOUCH", "release with no gesture: heldMs=%lu hadLongPressLatch=%d", gpio.lastTouchHeldMs(),
+            hadLongPressLatch);
   }
 #endif
 }
 
+bool MappedInputManager::touchSynthesizedEdge(const Button button) const {
+  // A gesture (tap/long-press/swipe) is a single instantaneous event, but
+  // different consumers poll different edges: menus confirm on wasReleased()
+  // (HomeActivity, FileBrowserActivity), list nav uses both onNextPress
+  // (wasPressed) and onNextRelease (wasReleased) across screens. So a gesture is
+  // surfaced as BOTH a press and a release edge in the same frame (isPressed
+  // stays physical-only, so hold-to-repeat and lock-on-enter checks see nothing).
+  if (!gpio.hasTouch()) {
+    return false;
+  }
+  switch (button) {
+    case Button::Confirm:
+      return tsConfirm;
+    case Button::Back:
+      // The GT911 capacitive home key (if present) also maps to logical Back.
+      return tsBack || gpio.wasHomeKeyPressed();
+    case Button::NavNext:
+      return tsNavNext;
+    case Button::NavPrevious:
+      return tsNavPrev;
+    case Button::PageForward:
+      return tsPageForward;
+    case Button::PageBack:
+      return tsPageBack;
+    default:
+      return false;
+  }
+}
+
 bool MappedInputManager::wasPressed(const Button button) const {
   // Touch boards (e.g. LilyGo T5 EPD47) drive the whole logical control set from
-  // GT911 gestures (serviceTouchGestures): the panel has one physical key, so
-  // tap = Confirm, long-press = Back, swipes = page/list navigation. These
-  // synthesized edges are OR'd in below; on non-touch boards they are never set.
-  if (gpio.hasTouch()) {
-    // The GT911 capacitive home key (if present) also maps to logical Back.
-    if (button == Button::Back && (tsBack || gpio.wasHomeKeyPressed())) {
-      return true;
-    }
-    switch (button) {
-      case Button::Confirm:
-        if (tsConfirm) return true;
-        break;
-      case Button::Back:
-        if (tsBack) return true;
-        break;
-      case Button::NavNext:
-        if (tsNavNext) return true;
-        break;
-      case Button::NavPrevious:
-        if (tsNavPrev) return true;
-        break;
-      case Button::PageForward:
-        if (tsPageForward) return true;
-        break;
-      case Button::PageBack:
-        if (tsPageBack) return true;
-        break;
-      default:
-        break;
-    }
+  // GT911 gestures (serviceTouchGestures); the panel has one physical key.
+  if (touchSynthesizedEdge(button)) {
+    return true;
   }
   return mapButton(button, &HalGPIO::wasPressed);
 }
 
-bool MappedInputManager::wasReleased(const Button button) const { return mapButton(button, &HalGPIO::wasReleased); }
+bool MappedInputManager::wasReleased(const Button button) const {
+  if (touchSynthesizedEdge(button)) {
+    return true;
+  }
+  return mapButton(button, &HalGPIO::wasReleased);
+}
 
 bool MappedInputManager::isPressed(const Button button) const { return mapButton(button, &HalGPIO::isPressed); }
 
