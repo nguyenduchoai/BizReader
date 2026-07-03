@@ -210,8 +210,14 @@ class CrossPointSettings {
   // Text rendering settings
   uint8_t extraParagraphSpacing = 1;
   uint8_t textAntiAliasing = 1;
-  // Short power button click behaviour
+  // Short power button click behaviour. The LilyGo T5 EPD47 has a single user
+  // key (GPIO21) and no side buttons, so its short press turns the page (long
+  // hold still sleeps); every other board defaults to no-op.
+#if defined(FREEINK_DEVICE_LILYGO_EPD47) && FREEINK_DEVICE_LILYGO_EPD47
+  uint8_t shortPwrBtn = PAGE_TURN;
+#else
   uint8_t shortPwrBtn = IGNORE;
+#endif
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;
