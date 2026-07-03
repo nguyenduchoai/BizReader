@@ -3,6 +3,8 @@
 #include <HalStorage.h>
 #include <InflateReader.h>
 #include <Logging.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <algorithm>
 
@@ -461,6 +463,7 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t ch
     }
 
     size_t remaining = inflatedDataSize;
+    uint32_t chunkCount = 0;
     while (remaining > 0) {
       const size_t dataRead = file.read(buffer, remaining < chunkSize ? remaining : chunkSize);
       if (dataRead == 0) {
@@ -475,6 +478,13 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t ch
         return false;
       }
       remaining -= dataRead;
+
+      // Yield periodically: a large uncompressed entry (e.g. a full-resolution
+      // cover image) can loop for thousands of chunks with no natural yield
+      // point, starving IDLE0 long enough to trip the task watchdog.
+      if ((++chunkCount & 0x0F) == 0) {
+        vTaskDelay(1);
+      }
     }
 
     free(buffer);
@@ -511,6 +521,7 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t ch
 
     bool success = false;
     size_t totalProduced = 0;
+    uint32_t chunkCount = 0;
 
     while (true) {
       size_t produced;
@@ -545,7 +556,12 @@ bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t ch
         LOG_ERR("ZIP", "Decompression failed");
         break;
       }
-      // InflateStatus::Ok: output buffer full, continue
+      // InflateStatus::Ok: output buffer full, continue. Yield periodically —
+      // a large cover image can take thousands of chunks to inflate with no
+      // other yield point, starving IDLE0 long enough to trip the task watchdog.
+      if ((++chunkCount & 0x0F) == 0) {
+        vTaskDelay(1);
+      }
     }
 
     free(outputBuffer);
