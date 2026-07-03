@@ -1041,6 +1041,9 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   renderStatusBar();
   const auto tBwRender = millis();
 
+  // Set when the pre-grayscale BW panel refresh is skipped (controller-less
+  // panels); the grayscale pass below must then display, or fall back to BW.
+  bool bwDisplaySkipped = false;
   if (pageHasImages) {
     // Double FAST_REFRESH with selective image blanking (pablohc's technique):
     // HALF_REFRESH sets particles too firmly for the grayscale LUT to adjust.
@@ -1066,6 +1069,13 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     // HALF ghost-cleanup path, which drives every pixel to its target
     // regardless of residue.
     pagesUntilFullRefresh = 1;
+  } else if (needsAnyGrayscale && renderer.supportsStripGrayscale() && !renderer.grayscaleNeedsBwPrime()) {
+    // Controller-less panels (EPD47) self-clear and composite the whole frame in
+    // the grayscale pass below, so this pre-grayscale BW panel refresh is a
+    // redundant extra full-screen flash and render. Skip it; the grayscale pass
+    // draws the sharp page directly from the intact BW framebuffer base. If that
+    // pass can't run (scratch OOM), the fallback below shows the BW page instead.
+    bwDisplaySkipped = true;
   } else {
     ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
   }
@@ -1086,6 +1096,11 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     auto scratch = makeUniqueNoThrow<uint8_t[]>(static_cast<size_t>(gwBytes) * STRIP_ROWS);
     if (!scratch) {
       LOG_ERR("ERS", "OOM: grayscale strip scratch (%d bytes); skipping AA this page", gwBytes * STRIP_ROWS);
+      if (bwDisplaySkipped) {
+        // The BW panel refresh was skipped in anticipation of this pass; without
+        // it the page would be blank, so display the BW framebuffer instead.
+        ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+      }
     } else {
       // Bands may be streamed in any order: X4 windows each via setRamArea, X3
       // via PTL.

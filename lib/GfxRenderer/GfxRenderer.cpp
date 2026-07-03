@@ -1811,6 +1811,8 @@ void GfxRenderer::writeGrayscalePlaneStrip(bool lsbPlane, const uint8_t* scratch
 
 bool GfxRenderer::supportsStripGrayscale() const { return display.supportsStripGrayscale(); }
 
+bool GfxRenderer::grayscaleNeedsBwPrime() const { return display.grayscaleNeedsBwPrime(); }
+
 void GfxRenderer::freeBwBufferChunks() {
   for (auto& bwBufferChunk : bwBufferChunks) {
     if (bwBufferChunk) {

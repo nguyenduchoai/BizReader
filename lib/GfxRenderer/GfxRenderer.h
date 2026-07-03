@@ -243,6 +243,9 @@ class GfxRenderer {
   // numRows)), bypassing the framebuffer. supportsStripGrayscale() gates use.
   void writeGrayscalePlaneStrip(bool lsbPlane, const uint8_t* scratch, int yStart, int numRows) const;
   bool supportsStripGrayscale() const;
+  // False on controller-less panels whose grayscale pass self-clears; the reader
+  // uses this to skip the redundant pre-grayscale BW panel refresh.
+  bool grayscaleNeedsBwPrime() const;
   bool storeBwBuffer();    // Returns true if buffer was stored successfully
   void restoreBwBuffer();  // Restore and free the stored buffer
   void cleanupGrayscaleWithFrameBuffer() const;
