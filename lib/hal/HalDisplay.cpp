@@ -1,3 +1,4 @@
+#include <BoardConfig.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
 
@@ -6,7 +7,12 @@ HalDisplay display;
 
 #define SD_SPI_MISO 7
 
-HalDisplay::HalDisplay() : einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY) {}
+// Display SPI pins come from the active BoardProfile (identical to the old
+// EPD_* macros on Xteink; PIN_UNASSIGNED on external-bus panels, which ignore
+// them). ACTIVE is constant-initialized, so reading it during static init is safe.
+HalDisplay::HalDisplay()
+    : einkDisplay(BoardConfig::ACTIVE.display.sclk, BoardConfig::ACTIVE.display.mosi, BoardConfig::ACTIVE.display.cs,
+                  BoardConfig::ACTIVE.display.dc, BoardConfig::ACTIVE.display.rst, BoardConfig::ACTIVE.display.busy) {}
 
 HalDisplay::~HalDisplay() {}
 

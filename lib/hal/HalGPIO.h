@@ -3,6 +3,13 @@
 #include <Arduino.h>
 #include <InputManager.h>
 
+// Xteink X3/X4 hardware build. Pin constants and the X3 I2C fingerprint probe
+// below are specific to the Xteink board; other boards (e.g. LilyGo T5 EPD47)
+// take all pins from BoardConfig::ACTIVE and must never touch these GPIOs —
+// on the LilyGo, GPIO0/13/20 belong to the EPD shift register and UART.
+#define CROSSPOINT_HW_XTEINK (FREEINK_DEVICE_X3 || FREEINK_DEVICE_X4)
+
+#if CROSSPOINT_HW_XTEINK
 // Display SPI pins (custom pins for XteinkX4, not hardware SPI defaults)
 #define EPD_SCLK 8   // SPI Clock
 #define EPD_MOSI 10  // SPI MOSI (Master Out Slave In)
@@ -21,7 +28,10 @@
 #define X3_I2C_SDA 20
 #define X3_I2C_SCL 0
 #define X3_I2C_FREQ 400000
+#endif  // CROSSPOINT_HW_XTEINK
 
+// I2C device constants (chip facts, not board pins — needed by the X3-only
+// HalClock/HalTiltSensor code, which runtime-guards with deviceIsX3()).
 // TI BQ27220 Fuel gauge I2C
 #define I2C_ADDR_BQ27220 0x55  // Fuel gauge I2C address
 #define BQ27220_SOC_REG 0x2C   // StateOfCharge() command code (%)
@@ -71,6 +81,11 @@ class HalGPIO {
   bool wasAnyReleased() const;
   unsigned long getHeldTime() const;
   unsigned long getPowerButtonHeldTime() const;
+
+  // Touch passthroughs (inert on boards without a touch controller).
+  bool hasTouch() const;
+  // One-shot event for the capacitive home key below the glass (GT911 boards).
+  bool wasHomeKeyPressed() const;
 
   // Setup wake up GPIO and enter deep sleep
   void startDeepSleep();

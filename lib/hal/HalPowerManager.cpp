@@ -1,6 +1,7 @@
 #include "HalPowerManager.h"
 
 #include <Logging.h>
+#include <PowerManager.h>
 #include <WiFi.h>
 #include <esp_sleep.h>
 
@@ -11,6 +12,7 @@
 HalPowerManager powerManager;  // Singleton instance
 
 void HalPowerManager::begin() {
+#if CROSSPOINT_HW_XTEINK
   if (gpio.deviceIsX3()) {
     // X3 uses an I2C fuel gauge for battery monitoring.
     // I2C init must come AFTER gpio.begin() so early hardware detection/probes are finished.
@@ -20,6 +22,7 @@ void HalPowerManager::begin() {
   } else {
     pinMode(BAT_GPIO0, INPUT);
   }
+#endif
   normalFreq = getCpuFrequencyMhz();
   modeMutex = xSemaphoreCreateMutex();
   assert(modeMutex != nullptr);
@@ -75,26 +78,34 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   logSerial.end();
 #endif
 
+#if CROSSPOINT_HW_XTEINK
   // Pre-sleep routines from the original firmware
   // GPIO13 is connected to battery latch MOSFET, we need to make sure it's low during sleep
   // Note that this means the MCU will be completely powered off during sleep, including RTC
+  // (Xteink only — on the LilyGo T5 EPD47, GPIO13 is the EPD shift-register data line.)
   constexpr gpio_num_t GPIO_SPIWP = GPIO_NUM_13;
   gpio_set_direction(GPIO_SPIWP, GPIO_MODE_OUTPUT);
   gpio_set_level(GPIO_SPIWP, 0);
   esp_sleep_config_gpio_isolate();
   gpio_deep_sleep_hold_en();
   gpio_hold_en(GPIO_SPIWP);
-  pinMode(InputManager::POWER_BUTTON_PIN, INPUT_PULLUP);
-  // Arm the wakeup trigger *after* the button is released
-  // Note: this is only useful for waking up on USB power. On battery, the MCU will be completely powered off, so the
-  // power button is hard-wired to briefly provide power to the MCU, waking it up regardless of the wakeup source
-  // configuration
-  esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+#else
+  esp_sleep_config_gpio_isolate();
+  gpio_deep_sleep_hold_en();
+#endif
+  // Arm the wakeup trigger *after* the button is released. PowerManager sets the
+  // matching pull on the power pin and picks the SoC-correct wake source (gpio on
+  // C3, RTC ext1 on S3) from BoardConfig::ACTIVE.
+  // Note: on Xteink this is only useful for waking up on USB power. On battery, the MCU will be completely powered
+  // off, so the power button is hard-wired to briefly provide power to the MCU, waking it up regardless of the wakeup
+  // source configuration
+  freeink::PowerManager::armPowerButtonWakeup();
   // Enter Deep Sleep
   esp_deep_sleep_start();
 }
 
 uint16_t HalPowerManager::getBatteryPercentage() const {
+#if CROSSPOINT_HW_XTEINK
   if (_batteryUseI2C) {
     const unsigned long now = millis();
     if (_batteryLastPollMs != 0 && (now - _batteryLastPollMs) < BATTERY_POLL_MS) {
@@ -121,7 +132,10 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
     _batteryLastPollMs = now;
     return _batteryCachedPercent;
   }
-  static const BatteryMonitor battery = BatteryMonitor(BAT_GPIO0);
+#endif
+  // Profile-driven: pin + divider come from BoardConfig::ACTIVE (X4: GPIO0 x2.0,
+  // LilyGo T5 EPD47: GPIO14 x2.0).
+  static const BatteryMonitor battery = BatteryMonitor();
 
   // smooth the battery %.
   if (_batteryCachedPercent == 0) {

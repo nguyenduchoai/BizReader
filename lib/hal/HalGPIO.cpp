@@ -1,13 +1,19 @@
 #include <HalGPIO.h>
 #include <Logging.h>
+#include <PowerManager.h>
 #include <Preferences.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <esp_sleep.h>
 
+#if !CROSSPOINT_HW_XTEINK
+#include <soc/usb_serial_jtag_reg.h>
+#endif
+
 // Global HalGPIO instance
 HalGPIO gpio;
 
+#if CROSSPOINT_HW_XTEINK
 namespace X3GPIO {
 
 struct X3ProbeResult {
@@ -189,17 +195,30 @@ HalGPIO::DeviceType detectDeviceTypeWithFingerprint() {
 }
 
 }  // namespace
+#else   // !CROSSPOINT_HW_XTEINK
+namespace {
+// Non-Xteink boards have no X3 sibling to fingerprint; every deviceIsX3() call
+// downstream falls through to its X4/default branch.
+HalGPIO::DeviceType detectDeviceTypeWithFingerprint() { return HalGPIO::DeviceType::X4; }
+}  // namespace
+#endif  // CROSSPOINT_HW_XTEINK
 
 void HalGPIO::begin() {
   inputMgr.begin();
-  SPI.begin(EPD_SCLK, SPI_MISO, EPD_MOSI, EPD_CS);
 
   _deviceType = detectDeviceTypeWithFingerprint();
+
+#if CROSSPOINT_HW_XTEINK
+  // Xteink shares one SPI bus between display and SD. Other boards get their
+  // bus set up by the drivers themselves (SDCardManager from ACTIVE.sd; the
+  // parallel EPD owns its own bus).
+  SPI.begin(EPD_SCLK, SPI_MISO, EPD_MOSI, EPD_CS);
 
   if (deviceIsX4()) {
     pinMode(BAT_GPIO0, INPUT);
     pinMode(UART0_RXD, INPUT);
   }
+#endif
 }
 
 void HalGPIO::update() {
@@ -225,14 +244,20 @@ unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 unsigned long HalGPIO::getPowerButtonHeldTime() const { return inputMgr.getPowerButtonHeldTime(); }
 
+bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
+
+bool HalGPIO::wasHomeKeyPressed() const { return inputMgr.wasHomeKeyPressed(); }
+
 void HalGPIO::startDeepSleep() {
   // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
   while (inputMgr.isPressed(BTN_POWER)) {
     delay(50);
     inputMgr.update();
   }
-  // Arm the wakeup trigger *after* the button is released
-  esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+  // Arm the wakeup trigger *after* the button is released. PowerManager picks
+  // the SoC-correct wake source (gpio on C3, RTC ext1 on S3) and the pin +
+  // polarity from BoardConfig::ACTIVE.
+  freeink::PowerManager::armPowerButtonWakeup();
   // Enter Deep Sleep
   esp_deep_sleep_start();
 }
@@ -270,6 +295,7 @@ void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPre
 }
 
 bool HalGPIO::isUsbConnected() const {
+#if CROSSPOINT_HW_XTEINK
   if (deviceIsX3()) {
     // X3: infer USB/charging via BQ27220 Current() register (0x0C, signed mA).
     // Positive current means charging.
@@ -284,6 +310,14 @@ bool HalGPIO::isUsbConnected() const {
   }
   // U0RXD/GPIO20 reads HIGH when USB is connected
   return digitalRead(UART0_RXD) == HIGH;
+#else
+  // No dedicated USB-detect GPIO: a connected host sends USB SOF frames every
+  // 1 ms, advancing the USB-Serial-JTAG frame counter. A static counter means
+  // no host (verify on hardware — affects wake heuristics and charge glyph).
+  const uint32_t frame1 = REG_READ(USB_SERIAL_JTAG_FRAM_NUM_REG);
+  delay(3);
+  return REG_READ(USB_SERIAL_JTAG_FRAM_NUM_REG) != frame1;
+#endif
 }
 
 HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
@@ -292,8 +326,11 @@ HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
 
   const bool usbConnected = isUsbConnected();
 
+  // C3 wakes report ESP_SLEEP_WAKEUP_GPIO; S3 (ext1) wakes report EXT1.
+  const bool gpioWake = wakeupCause == ESP_SLEEP_WAKEUP_GPIO || wakeupCause == ESP_SLEEP_WAKEUP_EXT1;
+
   if ((wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && !usbConnected) ||
-      (wakeupCause == ESP_SLEEP_WAKEUP_GPIO && resetReason == ESP_RST_DEEPSLEEP && usbConnected)) {
+      (gpioWake && resetReason == ESP_RST_DEEPSLEEP && usbConnected)) {
     return WakeupReason::PowerButton;
   }
   if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_UNKNOWN && usbConnected) {
