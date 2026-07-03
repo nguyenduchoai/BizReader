@@ -248,6 +248,20 @@ bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
 
 bool HalGPIO::wasHomeKeyPressed() const { return inputMgr.wasHomeKeyPressed(); }
 
+bool HalGPIO::isTouchPressed() const { return inputMgr.isTouchPressed(); }
+
+bool HalGPIO::wasTouchReleased() const { return inputMgr.wasTouchReleased(); }
+
+bool HalGPIO::wasTouchTap(float& nx, float& ny) const { return inputMgr.wasTouchTap(nx, ny); }
+
+bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const {
+  return inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
+}
+
+bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const {
+  return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
+}
+
 void HalGPIO::startDeepSleep() {
   // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
   while (inputMgr.isPressed(BTN_POWER)) {

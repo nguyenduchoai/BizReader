@@ -2,7 +2,10 @@
 
 #include <GfxRenderer.h>
 
+#include <cmath>
+
 #include "CrossPointSettings.h"
+#include "Logging.h"
 
 bool MappedInputManager::isNavDirectionSwapped() const {
   // Key the swap on the orientation the screen is *actually* rendered at, not the persisted reader
@@ -74,12 +77,121 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
   return false;
 }
 
+void MappedInputManager::serviceTouchGestures() const {
+  // Recompute per-frame synthesized edges. Cleared first so a frame with no
+  // gesture reports nothing, and left all-false on non-touch boards.
+  tsConfirm = tsBack = tsNavNext = tsNavPrev = tsPageForward = tsPageBack = false;
+  if (!gpio.hasTouch()) {
+    return;
+  }
+
+  // Long-press (stationary contact held past the threshold) -> Back. Fires once
+  // per contact, mid-hold, and latches so the tap-on-release below is suppressed.
+  float nx = 0.0f, ny = 0.0f;
+  unsigned long heldMs = 0;
+  if (gpio.isTouchTapCandidate(nx, ny, heldMs)) {
+    if (!longPressLatched && heldMs >= TOUCH_LONGPRESS_MS) {
+      tsBack = true;
+      longPressLatched = true;
+    }
+  }
+
+  // Tap on release (no movement) -> Confirm, unless this contact already fired a
+  // long-press Back.
+  float tx = 0.0f, ty = 0.0f;
+  if (gpio.wasTouchTap(tx, ty) && !longPressLatched) {
+    tsConfirm = true;
+  }
+
+  // Swipe (flick) -> directional navigation. The SDK reports start/end normalized
+  // in the panel's native (physical) frame; rotate the delta into the current
+  // logical orientation so "up on screen" is NavPrevious regardless of rotation.
+  float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+  if (gpio.wasSwipe(x0, y0, x1, y1)) {
+    const float dxN = x1 - x0;     // + = toward native X-max (long panel edge)
+    const float dyN = y1 - y0;     // + = toward native Y-max (short panel edge)
+    float dxL = 0.0f, dyL = 0.0f;  // logical: +x = right, +y = down
+    switch (renderer.getOrientation()) {
+      case GfxRenderer::LandscapeCounterClockwise:  // logical frame == native frame
+        dxL = dxN;
+        dyL = dyN;
+        break;
+      case GfxRenderer::Portrait:  // native rotated 90°: long panel axis is vertical
+        dxL = dyN;
+        dyL = -dxN;
+        break;
+      case GfxRenderer::LandscapeClockwise:  // 180°
+        dxL = -dxN;
+        dyL = -dyN;
+        break;
+      case GfxRenderer::PortraitInverted:  // 270°
+        dxL = -dyN;
+        dyL = dxN;
+        break;
+    }
+
+    if (std::fabs(dxL) >= std::fabs(dyL)) {
+      // Horizontal flick = page turn. Swipe left (content forward) -> next page.
+      if (dxL < 0.0f) {
+        tsPageForward = true;
+      } else {
+        tsPageBack = true;
+      }
+    } else {
+      // Vertical flick = move the list highlight. Swipe up -> previous item.
+      if (dyL < 0.0f) {
+        tsNavPrev = true;
+      } else {
+        tsNavNext = true;
+      }
+    }
+  }
+
+  // Clear the long-press latch once the contact ends, arming the next contact.
+  if (gpio.wasTouchReleased()) {
+    longPressLatched = false;
+  }
+
+#ifdef TOUCH_PROBE_DEBUG
+  if (tsConfirm || tsBack || tsNavNext || tsNavPrev || tsPageForward || tsPageBack) {
+    LOG_DBG("TOUCH", "gesture: confirm=%d back=%d navNext=%d navPrev=%d pageFwd=%d pageBack=%d", tsConfirm, tsBack,
+            tsNavNext, tsNavPrev, tsPageForward, tsPageBack);
+  }
+#endif
+}
+
 bool MappedInputManager::wasPressed(const Button button) const {
-  // Touch boards (e.g. LilyGo T5 EPD47) surface the GT911 capacitive home key
-  // as logical Back — they lack a physical back button (tap = Confirm via the
-  // SDK's synthesizeConfirm, the single key = page navigation).
-  if (button == Button::Back && gpio.hasTouch() && gpio.wasHomeKeyPressed()) {
-    return true;
+  // Touch boards (e.g. LilyGo T5 EPD47) drive the whole logical control set from
+  // GT911 gestures (serviceTouchGestures): the panel has one physical key, so
+  // tap = Confirm, long-press = Back, swipes = page/list navigation. These
+  // synthesized edges are OR'd in below; on non-touch boards they are never set.
+  if (gpio.hasTouch()) {
+    // The GT911 capacitive home key (if present) also maps to logical Back.
+    if (button == Button::Back && (tsBack || gpio.wasHomeKeyPressed())) {
+      return true;
+    }
+    switch (button) {
+      case Button::Confirm:
+        if (tsConfirm) return true;
+        break;
+      case Button::Back:
+        if (tsBack) return true;
+        break;
+      case Button::NavNext:
+        if (tsNavNext) return true;
+        break;
+      case Button::NavPrevious:
+        if (tsNavPrev) return true;
+        break;
+      case Button::PageForward:
+        if (tsPageForward) return true;
+        break;
+      case Button::PageBack:
+        if (tsPageBack) return true;
+        break;
+      default:
+        break;
+    }
   }
   return mapButton(button, &HalGPIO::wasPressed);
 }

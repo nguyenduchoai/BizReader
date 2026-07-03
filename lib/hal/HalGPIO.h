@@ -86,6 +86,17 @@ class HalGPIO {
   bool hasTouch() const;
   // One-shot event for the capacitive home key below the glass (GT911 boards).
   bool wasHomeKeyPressed() const;
+  // Gesture primitives forwarded from the SDK InputManager. Coordinates are
+  // normalized 0..1 in the panel's native (physical) frame; callers map them to
+  // the current logical orientation. All return false on non-touch boards.
+  bool isTouchPressed() const;
+  bool wasTouchReleased() const;
+  // One-shot tap on release (excludes swipes/drags); writes the touch-down point.
+  bool wasTouchTap(float& nx, float& ny) const;
+  // Flick on release; writes start and end points so the caller picks the axis.
+  bool wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const;
+  // In-place contact still a tap candidate; writes the point and the held time.
+  bool isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const;
 
   // Setup wake up GPIO and enter deep sleep
   void startDeepSleep();

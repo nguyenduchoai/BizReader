@@ -17,7 +17,10 @@ class MappedInputManager {
 
   MappedInputManager(HalGPIO& gpio, const GfxRenderer& renderer) : gpio(gpio), renderer(renderer) {}
 
-  void update() const { gpio.update(); }
+  void update() const {
+    gpio.update();
+    serviceTouchGestures();
+  }
   bool wasPressed(Button button) const;
   bool wasReleased(Button button) const;
   bool isPressed(Button button) const;
@@ -44,4 +47,33 @@ class MappedInputManager {
   const GfxRenderer& renderer;
 
   bool mapButton(Button button, bool (HalGPIO::*fn)(uint8_t) const) const;
+
+  // --- Touch gesture synthesis (Milestone B) --------------------------------
+  // On touch boards (LilyGo T5 EPD47) there is one physical key, so the whole
+  // logical control set is synthesized from GT911 gestures each update():
+  //   tap (release, no movement)  -> Confirm
+  //   long-press (in place, held) -> Back
+  //   horizontal swipe            -> PageForward / PageBack (reader page turn)
+  //   vertical swipe              -> NavNext / NavPrevious (move list highlight)
+  // Direction is resolved in the current logical orientation before mapping to
+  // a logical button, so it stays correct as the reader rotates. The synthesized
+  // edges are latched here in update() and OR'd into wasPressed(); they are inert
+  // (never set) on boards without a touch controller, so other platforms are
+  // unaffected. See [[lilygo-t5-epd47-touch-quirks]].
+  void serviceTouchGestures() const;
+
+  // Long-press threshold for a stationary contact to synthesize Back.
+  static constexpr unsigned long TOUCH_LONGPRESS_MS = 550;
+
+  // Latched one-frame synthesized press edges (mutable: update() is const but
+  // owns this per-frame edge state, mirroring how it drives the non-const gpio).
+  mutable bool tsConfirm = false;
+  mutable bool tsBack = false;
+  mutable bool tsNavNext = false;
+  mutable bool tsNavPrev = false;
+  mutable bool tsPageForward = false;
+  mutable bool tsPageBack = false;
+  // True once a long-press has fired Back for the current contact; suppresses the
+  // tap-on-release that would otherwise also Confirm, and blocks a repeat Back.
+  mutable bool longPressLatched = false;
 };
