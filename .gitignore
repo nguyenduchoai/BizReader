@@ -23,3 +23,6 @@ lib/EpdFont/scripts/output/
 # (worktrees, scheduled-task locks, settings.local, scout CLEANUP.md) out.
 .claude/*
 !.claude/skills/
+
+# Vendor reference clone (GPL-3.0), used for bring-up only — not part of the build
+/LilyGo-EPD47/
