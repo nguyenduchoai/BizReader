@@ -117,16 +117,16 @@ void MappedInputManager::serviceTouchGestures() const {
         dyL = dyN;
         break;
       case GfxRenderer::Portrait:  // native rotated 90°: long panel axis is vertical
-        dxL = dyN;
-        dyL = -dxN;
+        dxL = -dyN;
+        dyL = dxN;
         break;
       case GfxRenderer::LandscapeClockwise:  // 180°
         dxL = -dxN;
         dyL = -dyN;
         break;
       case GfxRenderer::PortraitInverted:  // 270°
-        dxL = -dyN;
-        dyL = dxN;
+        dxL = dyN;
+        dyL = -dxN;
         break;
     }
 
