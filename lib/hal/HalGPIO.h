@@ -105,6 +105,9 @@ class HalGPIO {
   // the low-power CPU clamp must count this as user activity or a touch-only
   // board can never wake from the 10 MHz idle mode (which also drops USB-CDC).
   bool wasTouchActivity() const;
+  // Put the touch controller into its low-power sleep state before MCU deep
+  // sleep (no-op on boards without touch).
+  void touchSleep();
 
   // Setup wake up GPIO and enter deep sleep
   void startDeepSleep();

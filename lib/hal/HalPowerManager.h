@@ -34,6 +34,13 @@ class HalPowerManager {
 
   void begin();
 
+  // Defensively release gpio_hold latches a PREVIOUS build's sleep may have
+  // left engaged (current builds hold nothing — bench-measured as useless).
+  // MUST run before gpio.begin(): the GT911 wake pulse (INT driven HIGH) is
+  // fired during touch bring-up, and a still-held-LOW INT pad swallows it —
+  // the probe then NACKs and touch is dead for the session.
+  void releaseSleepHolds();
+
   // Control CPU frequency for power saving
   void setPowerSaving(bool enabled);
 

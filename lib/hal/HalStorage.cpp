@@ -39,6 +39,11 @@ class HalStorage::StorageLock {
   HalStorage::StorageLock lock;               \
   return SDCard.method(__VA_ARGS__);
 
+// NOTE: there is deliberately no prepareForSleep()/SD quiesce here. On the
+// LilyGo T5 EPD47 it was bench-measured (tools/power-bench) to make deep-sleep
+// current WORSE (+330 uA vs simply leaving the mounted card and bus alone),
+// and a mounted-and-idle card adds nothing measurable to the sleep floor.
+
 std::vector<String> HalStorage::listFiles(const char* path, int maxFiles) {
   HAL_STORAGE_WRAPPED_CALL(listFiles, path, maxFiles);
 }

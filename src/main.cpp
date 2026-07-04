@@ -326,6 +326,11 @@ void setup() {
   silentRebootMagic = 0;
   silentRebootTarget = 0;
 
+  // Order matters: release any gpio_hold latches left by a previous build's
+  // sleep BEFORE gpio.begin() — its GT911 bring-up fires the INT-HIGH wake
+  // pulse, which a still-held-LOW INT pad swallows (probe NACKs -> touch dead
+  // all session). Current builds hold nothing, so this is a defensive no-op.
+  powerManager.releaseSleepHolds();
   gpio.begin();
   powerManager.begin();
   halTiltSensor.begin();

@@ -265,6 +265,23 @@ bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) c
 unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
 
 bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
+void HalGPIO::touchSleep() {
+  const uint8_t st = inputMgr.touchSleep();
+  if (st == InputManager::TOUCH_SLEEP_OK) {
+    LOG_INF("GPIO", "GT911 sleep verified (stopped ACKing)");
+  } else if (st == InputManager::TOUCH_SLEEP_STILL_AWAKE) {
+    // Bench-measured (2026-07-04): NOT a failure. A sleeping GT911 halts its
+    // capacitive scan oscillator (the current sink) but its I2C slave block
+    // keeps ACKing its address, so the re-probe verify can't confirm sleep.
+    // The command ACKed; deep-sleep current is the vendor floor (~480 uA), which
+    // is the real proof it slept. Debug-level so it doesn't cry wolf.
+    LOG_DBG("GPIO", "GT911 sleep cmd ACKed; still ACKs address (expected — scan halted)");
+  } else {
+    // 1=no controller probed, 2=sleep cmd NACKed. These mean the command never
+    // reached the chip — the scan oscillator may keep running through sleep.
+    LOG_ERR("GPIO", "GT911 sleep cmd not delivered (code %u)", st);
+  }
+}
 
 void HalGPIO::startDeepSleep() {
   // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
@@ -281,6 +298,17 @@ void HalGPIO::startDeepSleep() {
 }
 
 void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPressAllowed) {
+#if !CROSSPOINT_HW_XTEINK
+  // On boards that stay powered through deep sleep (LilyGo T5 EPD47), an ext1
+  // LOW wake on the pulled-up physical power button is itself proof of a
+  // deliberate press — the wake-status register records which pin fired.
+  // Requiring a continued hold after the (slow) boot spuriously re-slept the
+  // device on any normal short tap. Xteink keeps the hold check: its wakes
+  // arrive as POWERON (battery) or GPIO (C3/USB) and need USB-noise filtering.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1 && esp_sleep_get_ext1_wakeup_status() != 0) {
+    return;
+  }
+#endif
   if (shortPressAllowed) {
     // Fast path - no duration check needed
     return;
@@ -347,8 +375,14 @@ HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
   // C3 wakes report ESP_SLEEP_WAKEUP_GPIO; S3 (ext1) wakes report EXT1.
   const bool gpioWake = wakeupCause == ESP_SLEEP_WAKEUP_GPIO || wakeupCause == ESP_SLEEP_WAKEUP_EXT1;
 
+  // Note: a gpio/ext1 wake counts as PowerButton regardless of USB. On Xteink,
+  // battery deep sleep cuts MCU power entirely, so a battery wake arrives as
+  // POWERON (first clause) and EXT1+DEEPSLEEP only ever happens on USB. On
+  // boards that stay powered in deep sleep (LilyGo T5 EPD47), battery wakes are
+  // EXT1+DEEPSLEEP+!usb — requiring USB here made them skip the hold
+  // verification, so any bounce/glitch on the wake pin fully booted the device.
   if ((wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && !usbConnected) ||
-      (gpioWake && resetReason == ESP_RST_DEEPSLEEP && usbConnected)) {
+      (gpioWake && resetReason == ESP_RST_DEEPSLEEP)) {
     return WakeupReason::PowerButton;
   }
   if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_UNKNOWN && usbConnected) {
