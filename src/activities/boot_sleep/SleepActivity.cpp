@@ -221,7 +221,11 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
   if (hasGreyscale) {
     // OEM grayscale pipeline base: use a full sleep-screen paint so the panel
     // enters deep sleep from a clean B/W baseline before the gray nudge refresh.
-    renderer.displayGrayscaleBase(HalDisplay::FULL_REFRESH);
+    // Skipped on panels whose displayGray self-clears (EPD47) — there the BW
+    // pass is a redundant extra flash, same gate as the reader.
+    if (renderer.grayscaleNeedsBwPrime()) {
+      renderer.displayGrayscaleBase(HalDisplay::FULL_REFRESH);
+    }
   } else {
     renderer.displayBuffer(HalDisplay::FULL_REFRESH);
   }
@@ -238,6 +242,19 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
     renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
     renderer.copyGrayscaleMsbBuffers();
+
+    // Rebuild the B/W base in the (single) framebuffer: the LSB/MSB renders
+    // above clobbered it, but controller-less panels (EPD47) composite the
+    // grayscale live in displayGrayBuffer() with this framebuffer as the
+    // base/white plane. Without this the base is the stale MSB plane and the
+    // composite comes out mostly black.
+    bitmap.rewindToData();
+    renderer.setRenderMode(GfxRenderer::BW);
+    renderer.clearScreen();
+    renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
+    if (SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
+      renderer.invertScreen();
+    }
 
     renderer.displayGrayBuffer();
     renderer.setRenderMode(GfxRenderer::BW);
