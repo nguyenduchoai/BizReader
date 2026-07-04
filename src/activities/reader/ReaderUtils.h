@@ -69,6 +69,22 @@ inline void displayWithRefreshCycle(const GfxRenderer& renderer, int& pagesUntil
   }
 }
 
+// Grayscale sibling of displayWithRefreshCycle: pick the deghost strength for a
+// grayscale page from the same full-refresh cadence. Every getRefreshFrequency()
+// pages force a FULL clear (complete deghost); other pages get a quick FAST
+// update. Returns the mode to hand to renderer.displayGrayBuffer(). This is what
+// makes the refresh-frequency setting affect anti-aliased reading on controller-
+// less panels (EPD47), whose grayscale draw does its own on-glass clear; on-glass
+// controllers ignore the mode and run their own grayscale waveform.
+inline HalDisplay::RefreshMode grayscaleRefreshMode(int& pagesUntilFullRefresh) {
+  if (pagesUntilFullRefresh <= 1) {
+    pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+    return HalDisplay::FULL_REFRESH;
+  }
+  pagesUntilFullRefresh--;
+  return HalDisplay::FAST_REFRESH;
+}
+
 // Grayscale anti-aliasing pass. Renders content twice (LSB + MSB) to build
 // the grayscale buffer. Only the content callback is re-rendered — status bars
 // and other overlays should be drawn before calling this.

@@ -256,7 +256,11 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
       renderer.invertScreen();
     }
 
-    renderer.displayGrayBuffer();
+    // Full deghost: the sleep cover is a one-shot full-screen image shown for a
+    // long time, so favor a crisp, ghost-free render over page-turn speed. On
+    // controller-less panels (EPD47) this runs a complete clear; on-glass
+    // controllers ignore the mode.
+    renderer.displayGrayBuffer(HalDisplay::FULL_REFRESH);
     renderer.setRenderMode(GfxRenderer::BW);
   }
 }

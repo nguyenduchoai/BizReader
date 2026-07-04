@@ -236,7 +236,10 @@ class GfxRenderer {
   void displayGrayscaleBase(HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH) const;
   void copyGrayscaleLsbBuffers() const;
   void copyGrayscaleMsbBuffers() const;
-  void displayGrayBuffer() const;
+  // `mode` sizes the deghost clear on controller-less panels (EPD47): FAST for a
+  // quick per-page update, FULL for the periodic full-refresh cadence. Ignored
+  // by on-glass controllers, which run their own grayscale waveform.
+  void displayGrayBuffer(HalDisplay::RefreshMode mode = HalDisplay::FAST_REFRESH) const;
 
   // Tiled grayscale (X4): stream one band of a plane straight to controller RAM
   // from `scratch` (panelWidthBytes * numRows, physical rows [yStart, yStart+

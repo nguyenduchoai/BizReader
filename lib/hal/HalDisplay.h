@@ -65,7 +65,11 @@ class HalDisplay {
   void copyGrayscaleMsbBuffers(const uint8_t* msbBuffer);
   void cleanupGrayscaleBuffers(const uint8_t* bwBuffer);
 
-  void displayGrayBuffer(bool turnOffScreen = false);
+  // `mode` sizes the deghost clear on controller-less panels (EPD47): FAST = a
+  // single light settle (most ghosting, fewest flashes), FULL = a complete
+  // deghost for the periodic full-refresh cadence. On-glass controllers ignore
+  // it and drive their own grayscale waveform.
+  void displayGrayBuffer(bool turnOffScreen = false, RefreshMode mode = FAST_REFRESH);
 
   // Tiled grayscale: stream one band of a plane (lsbPlane selects LSB/MSB RAM)
   // straight to the controller; supportsStripGrayscale() gates the path. See

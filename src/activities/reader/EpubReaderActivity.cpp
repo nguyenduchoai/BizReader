@@ -1128,7 +1128,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
       const auto tGrayMsb = millis();
 
       renderer.setRenderMode(GfxRenderer::BW);
-      renderer.displayGrayBuffer();
+      // Drive the grayscale deghost off the same full-refresh cadence the BW path
+      // uses, so the refresh-frequency setting controls anti-aliased reading too:
+      // a quick FAST clear most pages, a full deghost every N. On controller-less
+      // panels (EPD47) this is the sole page-turn clear; on-glass controllers
+      // ignore the mode.
+      renderer.displayGrayBuffer(ReaderUtils::grayscaleRefreshMode(pagesUntilFullRefresh));
       const auto tGrayDisplay = millis();
 
       // BW framebuffer is intact; re-sync controller RAM for the next
