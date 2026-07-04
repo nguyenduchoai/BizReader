@@ -28,9 +28,20 @@ class HalPowerManager {
   SemaphoreHandle_t modeMutex = nullptr;  // Protect access to currentLockMode
 
  public:
-  static constexpr int LOW_POWER_FREQ = 10;                    // MHz
+  static constexpr int LOW_POWER_FREQ = 10;  // MHz
+  // How long to hold full CPU speed after the last user activity before clamping
+  // to LOW_POWER_FREQ. The page render runs synchronously in activityManager.loop()
+  // at full speed and the next input edge restores it before the next render, so
+  // this window is pure post-render idle time — on the LilyGo EPD47 it was ~3 s of
+  // ~70 mA (240 MHz + I2S) after every page turn before settling to the ~40 mA
+  // idle floor. Shorten it there so the CPU downclocks right after the draw.
+  // Xteink keeps the original 3 s (its bench/UX was tuned around it).
+#if FREEINK_DEVICE_LILYGO_EPD47
+  static constexpr unsigned long IDLE_POWER_SAVING_MS = 600;  // ms
+#else
   static constexpr unsigned long IDLE_POWER_SAVING_MS = 3000;  // ms
-  static constexpr unsigned long BATTERY_POLL_MS = 1500;       // ms
+#endif
+  static constexpr unsigned long BATTERY_POLL_MS = 1500;  // ms
 
   void begin();
 
