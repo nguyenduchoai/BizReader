@@ -102,6 +102,10 @@ class ActivityManager {
 
   bool preventAutoSleep() const;
   bool isReaderActivity() const;
+  // True only while the reader itself is the current (on-screen) activity —
+  // unlike isReaderActivity(), which is also true when a menu/popup launched
+  // from the reader sits on top of it on the stack.
+  bool isCurrentActivityReader() const;
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;
 

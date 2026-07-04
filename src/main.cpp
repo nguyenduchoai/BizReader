@@ -488,6 +488,10 @@ void loop() {
   // mappedInputManager.update() calls gpio.update() and then, on touch boards,
   // computes the tap/long-press/swipe gesture edges MappedInputManager::wasPressed()
   // reads. Calling raw gpio.update() here left those gestures permanently unset.
+  // The reader-on-screen flag gates the swipe -> Left/Right primitive mapping
+  // (in the reader those front buttons mean prev/next page, opposite to the
+  // swipe convention, and detectPageTurn ORs them with PageBack/PageForward).
+  mappedInputManager.setReaderOnScreen(activityManager.isCurrentActivityReader());
   mappedInputManager.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 

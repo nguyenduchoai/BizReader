@@ -80,7 +80,7 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
 void MappedInputManager::serviceTouchGestures() const {
   // Recompute per-frame synthesized edges. Cleared first so a frame with no
   // gesture reports nothing, and left all-false on non-touch boards.
-  tsConfirm = tsBack = tsNavNext = tsNavPrev = tsPageForward = tsPageBack = false;
+  tsConfirm = tsBack = tsSwipeUp = tsSwipeDown = tsSwipeLeft = tsSwipeRight = false;
   if (!gpio.hasTouch()) {
     return;
   }
@@ -130,19 +130,19 @@ void MappedInputManager::serviceTouchGestures() const {
         break;
     }
 
+    // Latch the dominant axis as a primitive direction; touchSynthesizedEdge()
+    // maps it onto the logical buttons each consumer actually polls.
     if (std::fabs(dxL) >= std::fabs(dyL)) {
-      // Horizontal flick = page turn. Swipe left (content forward) -> next page.
       if (dxL < 0.0f) {
-        tsPageForward = true;
+        tsSwipeLeft = true;
       } else {
-        tsPageBack = true;
+        tsSwipeRight = true;
       }
     } else {
-      // Vertical flick = move the list highlight. Swipe up -> previous item.
       if (dyL < 0.0f) {
-        tsNavPrev = true;
+        tsSwipeUp = true;
       } else {
-        tsNavNext = true;
+        tsSwipeDown = true;
       }
     }
   }
@@ -155,9 +155,9 @@ void MappedInputManager::serviceTouchGestures() const {
   }
 
 #ifdef TOUCH_PROBE_DEBUG
-  if (tsConfirm || tsBack || tsNavNext || tsNavPrev || tsPageForward || tsPageBack) {
-    LOG_DBG("TOUCH", "gesture: confirm=%d back=%d navNext=%d navPrev=%d pageFwd=%d pageBack=%d", tsConfirm, tsBack,
-            tsNavNext, tsNavPrev, tsPageForward, tsPageBack);
+  if (tsConfirm || tsBack || tsSwipeUp || tsSwipeDown || tsSwipeLeft || tsSwipeRight) {
+    LOG_DBG("TOUCH", "gesture: confirm=%d back=%d swipe(U=%d D=%d L=%d R=%d) readerOnScreen=%d", tsConfirm, tsBack,
+            tsSwipeUp, tsSwipeDown, tsSwipeLeft, tsSwipeRight, readerOnScreen);
   } else if (released) {
     // A contact ended but produced no gesture: log why, so a "confirm didn't
     // fire" report can be diagnosed without guessing. hadLongPressLatch=1 means
@@ -189,14 +189,32 @@ bool MappedInputManager::touchSynthesizedEdge(const Button button) const {
     case Button::Back:
       // The GT911 capacitive home key (if present) also maps to logical Back.
       return tsBack || gpio.wasHomeKeyPressed();
+    // A swipe answers for every logical button that direction means to some
+    // consumer: list menus poll NavNext/NavPrevious, the reader polls
+    // PageForward/PageBack, popups (ConfirmationActivity, IntervalSelection,
+    // keyboard) poll the raw Up/Down/Left/Right primitives.
     case Button::NavNext:
-      return tsNavNext;
+      return tsSwipeDown;
     case Button::NavPrevious:
-      return tsNavPrev;
+      return tsSwipeUp;
     case Button::PageForward:
-      return tsPageForward;
+      return tsSwipeLeft;
     case Button::PageBack:
-      return tsPageBack;
+      return tsSwipeRight;
+    case Button::Up:
+      return tsSwipeUp;
+    case Button::Down:
+      return tsSwipeDown;
+    case Button::Left:
+    case Button::Right:
+      // While the reader itself is on screen, horizontal swipes are page turns
+      // only: ReaderUtils::detectPageTurn ORs PageBack||Left and PageForward||
+      // Right, and front-button Left means *previous* page while swipe-left
+      // means *next* — answering both would fire prev+next from one swipe.
+      if (readerOnScreen) {
+        return false;
+      }
+      return button == Button::Left ? tsSwipeLeft : tsSwipeRight;
     default:
       return false;
   }

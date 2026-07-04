@@ -37,6 +37,12 @@ class MappedInputManager {
   // so portrait UI (home, settings) never swaps while the reader and its menus do.
   [[nodiscard]] bool isNavDirectionSwapped() const;
 
+  // Set each frame by the main loop: true while the reader itself is the current
+  // activity. Gates the swipe -> Left/Right primitive mapping (see
+  // touchSynthesizedEdge); reader-launched popups/menus are separate activities,
+  // so directional swipes keep working there. No-op on non-touch boards.
+  void setReaderOnScreen(const bool onScreen) { readerOnScreen = onScreen; }
+
  private:
   HalGPIO& gpio;
   // Logical-to-physical button mapping depends on what the user is actually looking at: when the
@@ -53,14 +59,16 @@ class MappedInputManager {
   // logical control set is synthesized from GT911 gestures each update():
   //   tap (release, no movement)  -> Confirm
   //   long-press (in place, held) -> Back
-  //   horizontal swipe            -> PageForward / PageBack (reader page turn)
-  //   vertical swipe              -> NavNext / NavPrevious (move list highlight)
-  // Direction is resolved in the current logical orientation before mapping to
-  // a logical button, so it stays correct as the reader rotates. The synthesized
-  // edges are latched here in update() and OR'd into BOTH wasPressed() and
-  // wasReleased() (via touchSynthesizedEdge) so consumers that act on either edge
-  // fire; they are inert (never set) on boards without a touch controller, so
-  // other platforms are unaffected. See [[lilygo-t5-epd47-touch-quirks]].
+  //   swipe                       -> a primitive direction (up/down/left/right)
+  // touchSynthesizedEdge() then answers that direction for every logical button
+  // it means to some consumer: NavNext/NavPrevious for list menus, PageForward/
+  // PageBack for the reader, and the raw Up/Down/Left/Right for popups
+  // (ConfirmationActivity, IntervalSelection, keyboard). Direction is resolved
+  // in the current logical orientation before latching, so it stays correct as
+  // the reader rotates. The synthesized edges are OR'd into BOTH wasPressed()
+  // and wasReleased() so consumers that act on either edge fire; they are inert
+  // (never set) on boards without a touch controller, so other platforms are
+  // unaffected. See [[lilygo-t5-epd47-touch-quirks]].
   void serviceTouchGestures() const;
 
   // True this frame if `button` was produced by a touch gesture (tap/long-press/
@@ -70,15 +78,17 @@ class MappedInputManager {
   // Long-press threshold for a stationary contact to synthesize Back.
   static constexpr unsigned long TOUCH_LONGPRESS_MS = 550;
 
-  // Latched one-frame synthesized press edges (mutable: update() is const but
+  // Latched one-frame synthesized gesture edges (mutable: update() is const but
   // owns this per-frame edge state, mirroring how it drives the non-const gpio).
   mutable bool tsConfirm = false;
   mutable bool tsBack = false;
-  mutable bool tsNavNext = false;
-  mutable bool tsNavPrev = false;
-  mutable bool tsPageForward = false;
-  mutable bool tsPageBack = false;
+  mutable bool tsSwipeUp = false;
+  mutable bool tsSwipeDown = false;
+  mutable bool tsSwipeLeft = false;
+  mutable bool tsSwipeRight = false;
   // True once a long-press has fired Back for the current contact; suppresses the
   // tap-on-release that would otherwise also Confirm, and blocks a repeat Back.
   mutable bool longPressLatched = false;
+  // See setReaderOnScreen().
+  bool readerOnScreen = false;
 };
