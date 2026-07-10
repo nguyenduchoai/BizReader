@@ -81,6 +81,7 @@ void MappedInputManager::serviceTouchGestures() const {
   // Recompute per-frame synthesized edges. Cleared first so a frame with no
   // gesture reports nothing, and left all-false on non-touch boards.
   tsConfirm = tsBack = tsSwipeUp = tsSwipeDown = tsSwipeLeft = tsSwipeRight = false;
+  tsHintPrevious = tsHintNext = false;
   if (!gpio.hasTouch()) {
     return;
   }
@@ -100,7 +101,9 @@ void MappedInputManager::serviceTouchGestures() const {
   // long-press Back.
   float tx = 0.0f, ty = 0.0f;
   if (gpio.wasTouchTap(tx, ty) && !longPressLatched) {
-    tsConfirm = true;
+    if (!routeTouchHintTap(tx, ty)) {
+      tsConfirm = true;
+    }
   }
 
   // Swipe (flick) -> directional navigation. The SDK reports start/end normalized
@@ -173,6 +176,43 @@ void MappedInputManager::serviceTouchGestures() const {
 #endif
 }
 
+bool MappedInputManager::routeTouchHintTap(const float panelX, const float panelY) const {
+  // Button hints are always rendered in portrait at the bottom edge, even when
+  // the current activity temporarily rotates its content. Convert the native
+  // landscape touch frame into that portrait frame before hit-testing.
+  const float portraitX = 1.0f - panelY;
+  const float portraitY = panelX;
+  constexpr float kTouchFooterTop = 0.90f;
+  if (portraitY < kTouchFooterTop) {
+    return false;
+  }
+
+  int slot = static_cast<int>(portraitX * touchHintActions.size());
+  if (slot < 0) slot = 0;
+  if (slot >= static_cast<int>(touchHintActions.size())) slot = touchHintActions.size() - 1;
+
+  const auto action = touchHintActions[slot];
+  switch (action) {
+    case TouchHintAction::Back:
+      tsBack = true;
+      break;
+    case TouchHintAction::Confirm:
+      tsConfirm = true;
+      break;
+    case TouchHintAction::Previous:
+      tsHintPrevious = true;
+      break;
+    case TouchHintAction::Next:
+      tsHintNext = true;
+      break;
+    case TouchHintAction::None:
+      break;
+  }
+  LOG_DBG("TOUCH", "footer tap slot=%d action=%u portrait=(%.3f,%.3f)", slot, static_cast<unsigned>(action),
+          portraitX, portraitY);
+  return true;
+}
+
 bool MappedInputManager::touchSynthesizedEdge(const Button button) const {
   // A gesture (tap/long-press/swipe) is a single instantaneous event, but
   // different consumers poll different edges: menus confirm on wasReleased()
@@ -194,17 +234,17 @@ bool MappedInputManager::touchSynthesizedEdge(const Button button) const {
     // PageForward/PageBack, popups (ConfirmationActivity, IntervalSelection,
     // keyboard) poll the raw Up/Down/Left/Right primitives.
     case Button::NavNext:
-      return tsSwipeDown;
+      return tsSwipeDown || tsHintNext;
     case Button::NavPrevious:
-      return tsSwipeUp;
+      return tsSwipeUp || tsHintPrevious;
     case Button::PageForward:
-      return tsSwipeLeft;
+      return tsSwipeLeft || tsHintNext;
     case Button::PageBack:
-      return tsSwipeRight;
+      return tsSwipeRight || tsHintPrevious;
     case Button::Up:
-      return tsSwipeUp;
+      return tsSwipeUp || tsHintPrevious;
     case Button::Down:
-      return tsSwipeDown;
+      return tsSwipeDown || tsHintNext;
     case Button::Left:
     case Button::Right:
       // While the reader itself is on screen, horizontal swipes are page turns
@@ -214,7 +254,7 @@ bool MappedInputManager::touchSynthesizedEdge(const Button button) const {
       if (readerOnScreen) {
         return false;
       }
-      return button == Button::Left ? tsSwipeLeft : tsSwipeRight;
+      return button == Button::Left ? (tsSwipeLeft || tsHintPrevious) : (tsSwipeRight || tsHintNext);
     default:
       return false;
   }
@@ -268,6 +308,30 @@ MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const
     }
     return "";
   };
+
+  auto actionForHardware = [&](uint8_t hw) -> TouchHintAction {
+    if (hw == SETTINGS.frontButtonBack) {
+      return back != nullptr && back[0] != '\0' ? TouchHintAction::Back : TouchHintAction::None;
+    }
+    if (hw == SETTINGS.frontButtonConfirm) {
+      return confirm != nullptr && confirm[0] != '\0' ? TouchHintAction::Confirm : TouchHintAction::None;
+    }
+    if (hw == SETTINGS.frontButtonLeft) {
+      if (leftLabel == nullptr || leftLabel[0] == '\0') return TouchHintAction::None;
+      return swapLabels ? TouchHintAction::Next : TouchHintAction::Previous;
+    }
+    if (hw == SETTINGS.frontButtonRight) {
+      if (rightLabel == nullptr || rightLabel[0] == '\0') return TouchHintAction::None;
+      return swapLabels ? TouchHintAction::Previous : TouchHintAction::Next;
+    }
+    return TouchHintAction::None;
+  };
+
+  constexpr uint8_t kFrontButtons[] = {HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM, HalGPIO::BTN_LEFT,
+                                       HalGPIO::BTN_RIGHT};
+  for (size_t i = 0; i < touchHintActions.size(); ++i) {
+    touchHintActions[i] = actionForHardware(kFrontButtons[i]);
+  }
 
   return {labelForHardware(HalGPIO::BTN_BACK), labelForHardware(HalGPIO::BTN_CONFIRM),
           labelForHardware(HalGPIO::BTN_LEFT), labelForHardware(HalGPIO::BTN_RIGHT)};

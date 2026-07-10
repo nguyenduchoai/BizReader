@@ -2,6 +2,8 @@
 
 #include <HalGPIO.h>
 
+#include <array>
+
 class GfxRenderer;
 
 class MappedInputManager {
@@ -44,6 +46,8 @@ class MappedInputManager {
   void setReaderOnScreen(const bool onScreen) { readerOnScreen = onScreen; }
 
  private:
+  enum class TouchHintAction : uint8_t { None, Back, Confirm, Previous, Next };
+
   HalGPIO& gpio;
   // Logical-to-physical button mapping depends on what the user is actually looking at: when the
   // screen is rendered rotated, the directional buttons must flip to match. The renderer is the only
@@ -70,6 +74,7 @@ class MappedInputManager {
   // (never set) on boards without a touch controller, so other platforms are
   // unaffected. See [[lilygo-t5-epd47-touch-quirks]].
   void serviceTouchGestures() const;
+  bool routeTouchHintTap(float panelX, float panelY) const;
 
   // True this frame if `button` was produced by a touch gesture (tap/long-press/
   // swipe). Shared by wasPressed() and wasReleased(); false on non-touch boards.
@@ -86,6 +91,10 @@ class MappedInputManager {
   mutable bool tsSwipeDown = false;
   mutable bool tsSwipeLeft = false;
   mutable bool tsSwipeRight = false;
+  mutable bool tsHintPrevious = false;
+  mutable bool tsHintNext = false;
+  mutable std::array<TouchHintAction, 4> touchHintActions = {
+      TouchHintAction::None, TouchHintAction::None, TouchHintAction::None, TouchHintAction::None};
   // True once a long-press has fired Back for the current contact; suppresses the
   // tap-on-release that would otherwise also Confirm, and blocks a repeat Back.
   mutable bool longPressLatched = false;
