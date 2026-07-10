@@ -291,6 +291,22 @@ MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const
   const char* leftLabel = swapLabels ? next : previous;
   const char* rightLabel = swapLabels ? previous : next;
 
+  if (gpio.hasTouch()) {
+    touchHintActions[0] = back != nullptr && back[0] != '\0' ? TouchHintAction::Back : TouchHintAction::None;
+    touchHintActions[1] = confirm != nullptr && confirm[0] != '\0' ? TouchHintAction::Confirm : TouchHintAction::None;
+    if (leftLabel == nullptr || leftLabel[0] == '\0') {
+      touchHintActions[2] = TouchHintAction::None;
+    } else {
+      touchHintActions[2] = swapLabels ? TouchHintAction::Next : TouchHintAction::Previous;
+    }
+    if (rightLabel == nullptr || rightLabel[0] == '\0') {
+      touchHintActions[3] = TouchHintAction::None;
+    } else {
+      touchHintActions[3] = swapLabels ? TouchHintAction::Previous : TouchHintAction::Next;
+    }
+    return {back, confirm, leftLabel, rightLabel};
+  }
+
   // Build the label order based on the configured hardware mapping.
   auto labelForHardware = [&](uint8_t hw) -> const char* {
     // Compare against configured logical roles and return the matching label.
