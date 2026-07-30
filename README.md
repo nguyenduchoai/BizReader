@@ -4,6 +4,14 @@
 
 CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
 
+## BizReader Platform
+
+Nhánh BizReader bổ sung ứng dụng Android để quản lý LilyGo T5 EPD47 mà không
+loại bỏ trình đọc sách, WebDAV hoặc Calibre hiện có:
+
+- [BizReader Connect cho Android](./apps/bizreader_connect/README.md)
+- [Kiến trúc App, firmware và đồng bộ BizSync](./docs/BIZREADER_PLATFORM.md)
+
 **Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
 
 ![CrossPoint Reader running on Xteink device](./docs/images/cover.jpg)
