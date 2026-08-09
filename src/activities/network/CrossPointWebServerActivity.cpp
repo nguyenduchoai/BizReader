@@ -63,7 +63,6 @@ int barsForRssi(int rssi, int currentBars) {
 
 void CrossPointWebServerActivity::onEnter() {
   Activity::onEnter();
-  BIZ_TRANSFER.pauseForManualTransfer();
 
   LOG_DBG("WEBACT", "Free heap at onEnter: %d bytes", ESP.getFreeHeap());
 
@@ -97,6 +96,12 @@ void CrossPointWebServerActivity::onExit() {
   stopDnsServer();
   MDNS.end();
 
+  if (networkMode == NetworkMode::CONNECT_BIZREADER_APP) {
+    BIZ_TRANSFER.stop();
+    LOG_DBG("WEBACT", "BizReader App connection stopped");
+    return;
+  }
+
   // Skip reboot if WiFi was never activated (e.g. user backed out of mode selection).
   if (WiFi.getMode() != WIFI_MODE_NULL) {
     if (isApMode) {
@@ -106,8 +111,6 @@ void CrossPointWebServerActivity::onExit() {
     }
     delay(30);
     silentRestart();
-  } else {
-    BIZ_TRANSFER.resumeAfterManualTransfer();
   }
 
   LOG_DBG("WEBACT", "Free heap at onExit end: %d bytes", ESP.getFreeHeap());
@@ -115,7 +118,9 @@ void CrossPointWebServerActivity::onExit() {
 
 void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) {
   const char* modeName = "Join Network";
-  if (mode == NetworkMode::CONNECT_CALIBRE) {
+  if (mode == NetworkMode::CONNECT_BIZREADER_APP) {
+    modeName = "Connect BizReader App";
+  } else if (mode == NetworkMode::CONNECT_CALIBRE) {
     modeName = "Connect to Calibre";
   } else if (mode == NetworkMode::CREATE_HOTSPOT) {
     modeName = "Create Hotspot";
@@ -124,6 +129,15 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
 
   networkMode = mode;
   isApMode = (mode == NetworkMode::CREATE_HOTSPOT);
+
+  if (mode == NetworkMode::CONNECT_BIZREADER_APP) {
+    state = WebServerActivityState::APP_CONNECT;
+    appConnectStartedAt = millis();
+    lastBleConnected = false;
+    BIZ_TRANSFER.begin();
+    requestUpdate();
+    return;
+  }
 
   if (mode == NetworkMode::CONNECT_CALIBRE) {
     startActivityForResult(
@@ -270,6 +284,20 @@ void CrossPointWebServerActivity::startWebServer() {
 }
 
 void CrossPointWebServerActivity::loop() {
+  if (state == WebServerActivityState::APP_CONNECT) {
+    const bool connected = BIZ_TRANSFER.isBleConnected();
+    if (connected != lastBleConnected) {
+      lastBleConnected = connected;
+      requestUpdate();
+    }
+
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+        (millis() - appConnectStartedAt >= APP_CONNECT_TIMEOUT_MS && !BIZ_TRANSFER.isBusy())) {
+      onGoHome();
+    }
+    return;
+  }
+
   // Handle different states
   if (state == WebServerActivityState::SERVER_RUNNING) {
     // Handle DNS requests for captive portal (AP mode only)
@@ -368,6 +396,11 @@ void CrossPointWebServerActivity::loop() {
 }
 
 void CrossPointWebServerActivity::render(RenderLock&&) {
+  if (state == WebServerActivityState::APP_CONNECT) {
+    renderAppConnect();
+    return;
+  }
+
   // Only render our own UI when server is running
   // Subactivities handle their own rendering
   if (state == WebServerActivityState::SERVER_RUNNING || state == WebServerActivityState::AP_STARTING) {
@@ -390,6 +423,24 @@ void CrossPointWebServerActivity::render(RenderLock&&) {
     }
     renderer.displayBuffer();
   }
+}
+
+void CrossPointWebServerActivity::renderAppConnect() const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
+  const int midY = pageHeight / 2;
+
+  renderer.clearScreen();
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CONNECT_APP));
+  renderer.drawCenteredText(UI_12_FONT_ID, midY - 25,
+                            lastBleConnected ? tr(STR_APP_BLE_CONNECTED) : tr(STR_APP_BLE_WAITING), true,
+                            EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, midY + 15, tr(STR_APP_BLE_INSTRUCTION), true);
+
+  const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderer.displayBuffer();
 }
 
 void CrossPointWebServerActivity::renderServerRunning() const {

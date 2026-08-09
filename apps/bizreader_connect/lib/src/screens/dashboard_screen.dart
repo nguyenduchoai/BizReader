@@ -136,7 +136,7 @@ class DashboardScreen extends StatelessWidget {
               const SizedBox(height: 10),
               const Text(
                 'Mô-đun này cần API BizSync trong firmware. Hiện ứng dụng đã '
-                'có BLE để mở phiên Wi-Fi và gửi sách thẳng vào thẻ nhớ; '
+                'có BLE theo yêu cầu để mở Wi-Fi và gửi sách vào thẻ nhớ; '
                 'BizSync sẽ dùng cùng giao thức LAN cho dữ liệu hai chiều.',
               ),
               const SizedBox(height: 20),

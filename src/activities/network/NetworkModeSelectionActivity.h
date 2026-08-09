@@ -5,7 +5,7 @@
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
-enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT };
+enum class NetworkMode { CONNECT_BIZREADER_APP, JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT };
 
 /**
  * NetworkModeSelectionActivity presents the user with a choice:

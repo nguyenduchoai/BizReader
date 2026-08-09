@@ -15,6 +15,10 @@ void main() {
 
     expect(find.text('Kết nối BizReader'), findsOneWidget);
     expect(find.text('Tìm BizReader'), findsOneWidget);
+    expect(
+      find.textContaining('Truyền tệp > Kết nối App'),
+      findsOneWidget,
+    );
     expect(find.text('Hoài Nguyễn'), findsNothing);
   });
 

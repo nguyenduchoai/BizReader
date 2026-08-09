@@ -26,9 +26,10 @@ APK release ARM64 nằm tại:
 build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-Để BizReader đang thức, chọn **Tìm BizReader** rồi chạm thiết bị để lưu. Khi gửi
-sách, App tự yêu cầu thiết bị mở phiên Wi-Fi. BizReader phải có sẵn một mạng đã
-lưu từ menu Wi-Fi/Truyền tệp; Android cần quyền quét/kết nối Bluetooth.
+Trên BizReader, mở **Truyền tệp > Kết nối App** để bật BLE, sau đó chọn **Tìm
+BizReader** trong App và chạm thiết bị để lưu. Khi gửi sách, mở lại màn hình
+**Kết nối App**; App yêu cầu thiết bị dùng Wi-Fi đã lưu và mở phiên truyền.
+Android cần quyền quét/kết nối Bluetooth.
 
 ## Phạm vi tiếp theo
 

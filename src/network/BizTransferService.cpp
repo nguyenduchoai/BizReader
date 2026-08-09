@@ -461,14 +461,18 @@ void BizTransferService::stop() {
 #endif
 }
 
-void BizTransferService::pauseForManualTransfer() { stop(); }
-
-void BizTransferService::resumeAfterManualTransfer() { begin(); }
-
 bool BizTransferService::isBusy() const {
 #ifdef FREEINK_DEVICE_LILYGO_EPD47
   return impl && (impl->state == TransferState::Connecting || impl->state == TransferState::Ready ||
                   impl->state == TransferState::Uploading || impl->state == TransferState::Complete);
+#else
+  return false;
+#endif
+}
+
+bool BizTransferService::isBleConnected() const {
+#ifdef FREEINK_DEVICE_LILYGO_EPD47
+  return impl && impl->bleConnected.load();
 #else
   return false;
 #endif

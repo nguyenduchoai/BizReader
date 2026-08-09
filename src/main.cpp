@@ -484,7 +484,6 @@ void setup() {
 
   // Ensure we're not still holding the power button before leaving setup
   waitForPowerRelease();
-  BIZ_TRANSFER.begin();
   allowSleepAt = millis() + 2000;
 }
 

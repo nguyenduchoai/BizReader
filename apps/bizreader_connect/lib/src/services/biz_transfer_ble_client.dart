@@ -204,8 +204,9 @@ class BizTransferBleClient {
 
     await connected.future.timeout(
       const Duration(seconds: 22),
-      onTimeout: () =>
-          throw const BizTransferException('Không tìm thấy BizReader ở gần.'),
+      onTimeout: () => throw const BizTransferException(
+        'Không tìm thấy BizReader. Hãy mở Truyền tệp > Kết nối App trên máy đọc.',
+      ),
     );
 
     try {

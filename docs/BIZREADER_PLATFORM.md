@@ -34,7 +34,7 @@ Mã nguồn mở được tái sử dụng theo đúng giấy phép và có ghi 
 
 BizTransfer v1 đã có trong firmware LilyGo và App Android:
 
-- BLE discovery mở, chạm để lưu thiết bị, không bonding hoặc passkey.
+- BLE chỉ bật từ menu **Truyền tệp > Kết nối App**, không bonding hoặc passkey.
 - Chỉ dùng Wi-Fi đã lưu trên BizReader; App không nhận mật khẩu mạng.
 - Token HTTP ngắn hạn được trả qua BLE khi thiết bị ở gần.
 - HTTP stream vào `/Ebook`, file `.part`, kiểm tra kích thước và SHA-256.
@@ -123,7 +123,8 @@ dữ liệu EPUB hoặc ảnh nhị phân trong body.
 
 ## BLE
 
-BLE quảng bá trong thời gian thiết bị đang thức và tự dừng trước deep sleep.
+BLE chỉ quảng bá khi người dùng mở **Truyền tệp > Kết nối App**. BLE tự tắt khi
+thoát màn hình, thiết bị ngủ hoặc sau 5 phút không có phiên truyền.
 GATT cung cấp:
 
 - Device identity và trạng thái phiên.

@@ -148,8 +148,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         const SizedBox(height: 10),
                         Text(
                           widget.controller.device.usesBizTransfer
-                              ? 'Hỗ trợ EPUB, TXT, XTC, XTCH và BMP. App sẽ tự '
-                                    'mở Wi-Fi trên BizReader trước khi gửi.'
+                              ? 'Hỗ trợ EPUB, TXT, XTC, XTCH và BMP. Hãy mở '
+                                    'Truyền tệp > Kết nối App trên BizReader trước.'
                               : 'Hỗ trợ EPUB, TXT, XTC, XTCH và BMP. Máy đọc '
                                     'phải đang mở Truyền tệp và điện thoại ở cùng mạng.',
                         ),

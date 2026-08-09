@@ -17,10 +17,9 @@ class BizTransferService {
   void begin();
   void loop();
   void stop();
-  void pauseForManualTransfer();
-  void resumeAfterManualTransfer();
 
   bool isBusy() const;
+  bool isBleConnected() const;
   bool shouldSkipLoopDelay() const;
 
   bool authorize(const String& token) const;

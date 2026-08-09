@@ -73,14 +73,24 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         });
       },
     );
-    _scanTimer = Timer(const Duration(seconds: 12), _stopScan);
+    _scanTimer = Timer(
+      const Duration(seconds: 12),
+      () => _stopScan(showHint: true),
+    );
   }
 
-  Future<void> _stopScan() async {
+  Future<void> _stopScan({bool showHint = false}) async {
     _scanTimer?.cancel();
     await _scanSubscription?.cancel();
     _scanSubscription = null;
-    if (mounted) setState(() => _scanning = false);
+    if (mounted) {
+      setState(() {
+        _scanning = false;
+        if (showHint && _devices.isEmpty) {
+          _message = 'Mở Truyền tệp > Kết nối App trên BizReader rồi thử lại.';
+        }
+      });
+    }
   }
 
   Future<void> _selectDevice(BizReaderBleDevice device) async {
@@ -129,15 +139,15 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Để máy đọc đang thức. Chạm BizReader để lưu thiết bị; khi gửi '
-              'sách App sẽ tự mở Wi-Fi đã lưu trên máy đọc.',
+              'Trên máy đọc, mở Truyền tệp > Kết nối App. Sau đó chạm '
+              'BizReader tìm thấy để lưu thiết bị.',
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _connecting
                   ? null
                   : _scanning
-                  ? _stopScan
+                  ? () => _stopScan()
                   : _startScan,
               icon: _connecting || _scanning
                   ? const SizedBox.square(

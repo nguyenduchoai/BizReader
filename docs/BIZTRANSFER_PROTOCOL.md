@@ -49,14 +49,14 @@ tên sang file đích. File dở bị xóa khi lỗi, hủy hoặc server dừng
 
 ## Trình tự
 
-1. App quét service BLE và kết nối.
+1. Người dùng mở **Truyền tệp > Kết nối App** để bật BLE.
 2. Người dùng chạm thiết bị để App lưu BLE ID, không cần ghép đôi.
 3. Khi gửi sách, App kết nối BLE và gửi `start`.
 4. Firmware dùng Wi-Fi đã lưu rồi trả IP và token phiên qua BLE.
 5. App tính SHA-256 và stream file bằng HTTP `PUT`.
 6. Firmware xác minh, hoàn tất file và thông báo `complete`.
-7. Sau 5 phút không hoạt động, firmware tắt HTTP và Wi-Fi; BLE tồn tại đến khi
-   thiết bị ngủ để lần truyền sau có thể bắt đầu mà không vào menu WebDAV.
+7. Thoát màn hình hoặc sau 5 phút không có phiên truyền, firmware tắt BLE,
+   HTTP và Wi-Fi.
 
 BLE mở coi khoảng cách gần là ranh giới tin cậy. Một BLE client ở gần có thể
 kích hoạt phiên và đọc token ngắn hạn; mật khẩu Wi-Fi không được truyền qua

@@ -11,6 +11,7 @@
 // Web server activity states
 enum class WebServerActivityState {
   MODE_SELECTION,  // Choosing between Join Network and Create Hotspot
+  APP_CONNECT,     // BLE is advertising for BizReader Connect
   WIFI_SELECTION,  // WiFi selection subactivity is active (for Join Network mode)
   AP_STARTING,     // Starting Access Point mode
   SERVER_RUNNING,  // Web server is running and handling requests
@@ -52,7 +53,12 @@ class CrossPointWebServerActivity final : public Activity {
   // Cached signal-strength bracket (0..4) for the WiFi indicator.
   int lastWifiBars = 0;
 
+  unsigned long appConnectStartedAt = 0;
+  bool lastBleConnected = false;
+  static constexpr unsigned long APP_CONNECT_TIMEOUT_MS = 5UL * 60UL * 1000UL;
+
   void renderServerRunning() const;
+  void renderAppConnect() const;
   void renderWifiIndicator(int subHeaderTop) const;
 
   void onNetworkModeSelected(NetworkMode mode);
@@ -68,5 +74,7 @@ class CrossPointWebServerActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool skipLoopDelay() override { return webServer && webServer->isRunning(); }
-  bool preventAutoSleep() override { return webServer && webServer->isRunning(); }
+  bool preventAutoSleep() override {
+    return state == WebServerActivityState::APP_CONNECT || (webServer && webServer->isRunning());
+  }
 };
