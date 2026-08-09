@@ -44,6 +44,21 @@ void RecentBooksActivity::onExit() {
 void RecentBooksActivity::loop() {
   const int pageItems = UITheme::getInstance().getNumberOfItemsPerPage(renderer, true, false, true, true);
 
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+    const int contentHeight = renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight -
+                              metrics.verticalSpacing;
+    const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
+                                                    recentBooks.size(), selectorIndex, true);
+    if (touched >= 0) {
+      selectorIndex = touched;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
+
   // After a long-press has fired, swallow input until Confirm is physically released
   // (so the release doesn't also open the book; re-arm only once the button is up).
   if (longPressFired) {

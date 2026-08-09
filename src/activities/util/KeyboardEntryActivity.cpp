@@ -188,8 +188,85 @@ void KeyboardEntryActivity::mapColContentBottom(int& col, bool goingUp) const {
   }
 }
 
+bool KeyboardEntryActivity::selectTouchedKey(const float logicalX, const float logicalY) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  const int touchX = static_cast<int>(logicalX * pageWidth);
+  const int touchY = static_cast<int>(logicalY * pageHeight);
+  const int keyHeight = metrics.keyboardKeyHeight;
+  const int bottomKeyHeight = metrics.keyboardBottomKeyHeight;
+  const int keySpacing = metrics.keyboardKeySpacing;
+  const int contentRows = getContentRowCount();
+  const int contentCols = getContentColCount();
+  const int keyboardWidth = pageWidth * metrics.keyboardWidthPercent / 100;
+  const int keyWidth = (keyboardWidth - (contentCols - 1) * keySpacing) / contentCols;
+  const int leftMargin = (pageWidth - (contentCols * keyWidth + (contentCols - 1) * keySpacing)) / 2;
+  const int bottomRowGap = metrics.keyboardBottomKeySpacing > 0 ? 4 : 0;
+
+  // Every bundled theme bottom-aligns the keyboard. Keep a deterministic
+  // fallback below the header for any future theme that opts out.
+  const int keyboardStartY = metrics.keyboardBottomAligned
+                                 ? pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing -
+                                       (keyHeight + keySpacing) * contentRows - bottomKeyHeight - bottomRowGap +
+                                       metrics.keyboardVerticalOffset
+                                 : metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing * 6;
+
+  const int bkSpacing = metrics.keyboardBottomKeySpacing;
+  const int abcKeyWidth = (keyboardWidth - (COLS - 1) * keySpacing) / COLS;
+  const int contentTotalWidth = COLS * abcKeyWidth + (COLS - 1) * keySpacing;
+  const int bottomKeyWidth = (contentTotalWidth - (BOTTOM_KEY_COUNT - 1) * bkSpacing) / BOTTOM_KEY_COUNT;
+  const int bottomLeftMargin =
+      (pageWidth - (BOTTOM_KEY_COUNT * bottomKeyWidth + (BOTTOM_KEY_COUNT - 1) * bkSpacing)) / 2;
+
+  int rowLeftMargin = leftMargin;
+  if (urlMode) {
+    const int urlTotalWidth = 3 * keyWidth + 2 * keySpacing;
+    const int urlCenterX =
+        bottomLeftMargin + static_cast<int>(SpecialKeyType::Space) * (bottomKeyWidth + bkSpacing) +
+        bottomKeyWidth / 2;
+    rowLeftMargin = urlCenterX - urlTotalWidth / 2;
+  }
+
+  for (int row = 0; row < contentRows; ++row) {
+    const int rowY = keyboardStartY + row * (keyHeight + keySpacing);
+    if (touchY < rowY || touchY >= rowY + keyHeight) continue;
+    for (int col = 0; col < contentCols; ++col) {
+      const int keyX = rowLeftMargin + col * (keyWidth + keySpacing);
+      if (touchX >= keyX && touchX < keyX + keyWidth) {
+        selectedRow = row;
+        selectedCol = col;
+        cursorMode = false;
+        togglePos = false;
+        return true;
+      }
+    }
+  }
+
+  const int bottomRowY = keyboardStartY + contentRows * (keyHeight + keySpacing) + bottomRowGap;
+  if (touchY >= bottomRowY && touchY < bottomRowY + bottomKeyHeight) {
+    for (int col = 0; col < BOTTOM_KEY_COUNT; ++col) {
+      const int keyX = bottomLeftMargin + col * (bottomKeyWidth + bkSpacing);
+      if (touchX >= keyX && touchX < keyX + bottomKeyWidth) {
+        selectedRow = contentRows;
+        selectedCol = col;
+        cursorMode = false;
+        togglePos = false;
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 void KeyboardEntryActivity::loop() {
   const int totalRows = getTotalRowCount();
+
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY) && !selectTouchedKey(touchX, touchY)) {
+    mappedInput.cancelTouchConfirm();
+  }
 
   if (!cursorMode && mappedInput.wasPressed(MappedInputManager::Button::Up)) {
     upHeld = true;

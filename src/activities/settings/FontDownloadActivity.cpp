@@ -432,6 +432,23 @@ void FontDownloadActivity::loop() {
     const int listSize = listItemCount();
     const int pageItems = UITheme::getNumberOfItemsPerPage(renderer, true, false, true, false);
 
+    if (!families_.empty()) {
+      float touchX = 0.0f, touchY = 0.0f;
+      if (mappedInput.getTouchTap(touchX, touchY)) {
+        const auto& metrics = UITheme::getInstance().getMetrics();
+        const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+        const int contentHeight = renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight -
+                                  metrics.verticalSpacing;
+        const int touched = mappedInput.touchListIndex(
+            Rect{0, contentTop, renderer.getScreenWidth(), contentHeight}, listSize, selectedIndex_, true);
+        if (touched >= 0) {
+          selectedIndex_ = touched;
+        } else {
+          mappedInput.cancelTouchConfirm();
+        }
+      }
+    }
+
     buttonNavigator_.onNextRelease([this, listSize] {
       selectedIndex_ = ButtonNavigator::nextIndex(selectedIndex_, listSize);
       requestUpdate();

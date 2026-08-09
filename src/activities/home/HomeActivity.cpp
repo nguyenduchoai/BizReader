@@ -169,6 +169,28 @@ void HomeActivity::freeCoverBuffer() {
 void HomeActivity::loop() {
   const int menuCount = getMenuItemCount();
 
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int pageWidth = renderer.getScreenWidth();
+    const int pageHeight = renderer.getScreenHeight();
+    const int pixelX = static_cast<int>(touchX * pageWidth);
+    const int pixelY = static_cast<int>(touchY * pageHeight);
+    const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
+    const Rect menuRect{0, menuTop, pageWidth,
+                        pageHeight - (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing +
+                                      metrics.homeMenuTopOffset + metrics.buttonHintsHeight)};
+    const int menuButtons = menuCount - static_cast<int>(recentBooks.size());
+    const int touchedMenu = GUI.getButtonMenuItemAt(menuRect, menuButtons, pixelX, pixelY);
+    if (touchedMenu >= 0) {
+      selectorIndex = static_cast<int>(recentBooks.size()) + touchedMenu;
+    } else if (!recentBooks.empty() && pixelY >= metrics.homeTopPadding && pixelY < menuTop) {
+      selectorIndex = 0;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
+
   buttonNavigator.onNext([this, menuCount] {
     selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
     requestUpdate();

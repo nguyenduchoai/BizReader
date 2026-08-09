@@ -32,6 +32,22 @@ void OpdsServerListActivity::onEnter() {
 void OpdsServerListActivity::onExit() { Activity::onExit(); }
 
 void OpdsServerListActivity::loop() {
+  const int itemCount = getItemCount();
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+    const int contentHeight = renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight -
+                              metrics.verticalSpacing * 2;
+    const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
+                                                    itemCount, selectedIndex, true);
+    if (touched >= 0) {
+      selectedIndex = touched;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     if (pickerMode) {
       activityManager.goHome(HomeMenuItem::OPDS_BROWSER);
@@ -46,7 +62,6 @@ void OpdsServerListActivity::loop() {
     return;
   }
 
-  const int itemCount = getItemCount();
   if (itemCount > 0) {
     buttonNavigator.onNext([this, itemCount] {
       selectedIndex = ButtonNavigator::nextIndex(selectedIndex, itemCount);

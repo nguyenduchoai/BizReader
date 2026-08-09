@@ -28,6 +28,21 @@ void NetworkModeSelectionActivity::onEnter() {
 void NetworkModeSelectionActivity::onExit() { Activity::onExit(); }
 
 void NetworkModeSelectionActivity::loop() {
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+    const int contentHeight = renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight -
+                              metrics.verticalSpacing * 2;
+    const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
+                                                    MENU_ITEM_COUNT, selectedIndex, true);
+    if (touched >= 0) {
+      selectedIndex = touched;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
+
   // Handle back button - cancel
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     onCancel();

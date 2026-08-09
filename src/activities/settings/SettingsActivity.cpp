@@ -115,7 +115,23 @@ void SettingsActivity::onExit() {
 }
 
 void SettingsActivity::loop() {
-  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+  if (optionPopup.handleInput(mappedInput, renderer, [this] { requestUpdate(); })) return;
+
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
+    const int contentHeight = renderer.getScreenHeight() -
+                              (metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight +
+                               metrics.buttonHintsHeight + metrics.verticalSpacing * 2);
+    const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
+                                                    settingsCount, selectedSettingIndex - 1, false);
+    if (touched >= 0) {
+      selectedSettingIndex = touched + 1;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
 
   bool hasChangedCategory = false;
 

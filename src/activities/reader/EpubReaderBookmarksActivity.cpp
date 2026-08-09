@@ -65,6 +65,26 @@ int EpubReaderBookmarksActivity::getListHeight(const GfxRenderer& renderer) {
 }
 
 void EpubReaderBookmarksActivity::loop() {
+  if (confirmingDelete == DELETE_MODE_OFF && !bookmarks.empty()) {
+    float touchX = 0.0f, touchY = 0.0f;
+    if (mappedInput.getTouchTap(touchX, touchY)) {
+      const auto orientation = renderer.getOrientation();
+      const bool isLandscape = orientation == GfxRenderer::Orientation::LandscapeClockwise ||
+                               orientation == GfxRenderer::Orientation::LandscapeCounterClockwise;
+      const int contentX = orientation == GfxRenderer::Orientation::LandscapeClockwise ? 40 : 0;
+      const int contentWidth = renderer.getScreenWidth() - (isLandscape ? 40 : 0);
+      const int contentY = orientation == GfxRenderer::Orientation::PortraitInverted ? 50 : 0;
+      const int listY = contentY + LINE_HEIGHT;
+      const int touched = mappedInput.touchListIndex(
+          Rect{contentX, listY, contentWidth, getListHeight(renderer)}, bookmarks.size(), selectorIndex, true);
+      if (touched >= 0) {
+        selectorIndex = touched;
+      } else {
+        mappedInput.cancelTouchConfirm();
+      }
+    }
+  }
+
   // Delete confirmation mode
   if (confirmingDelete >= DELETE_MODE_DISPLAY) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {

@@ -1,6 +1,7 @@
 #pragma once
 #include <I18n.h>
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
 #include "components/UITheme.h"
+#include "fontIds.h"
 
 class OptionPopup {
  public:
@@ -44,10 +46,21 @@ class OptionPopup {
     active = true;
   }
 
-  bool handleInput(MappedInputManager& input, const std::function<void()>& requestUpdate) {
+  bool handleInput(MappedInputManager& input, const GfxRenderer& renderer,
+                   const std::function<void()>& requestUpdate) {
     if (!active) return false;
 
     const int count = static_cast<int>(ownedStrings.size());
+    float touchX = 0.0f, touchY = 0.0f;
+    if (input.getTouchTap(touchX, touchY)) {
+      const int touched = getTouchedIndex(renderer, touchX, touchY);
+      if (touched >= 0) {
+        selectedIndex = touched;
+      } else {
+        input.cancelTouchConfirm();
+      }
+    }
+
     if (input.wasPressed(MappedInputManager::Button::Up) || input.wasPressed(MappedInputManager::Button::Left)) {
       selectedIndex = (selectedIndex - 1 + count) % count;
       requestUpdate();
@@ -92,4 +105,45 @@ class OptionPopup {
   std::vector<std::string> ownedStrings;
   int selectedIndex = 0;
   std::function<void(int)> onSelectCallback;
+
+  int getTouchedIndex(const GfxRenderer& renderer, const float logicalX, const float logicalY) const {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int pageWidth = renderer.getScreenWidth();
+    const int pageHeight = renderer.getScreenHeight();
+    const int touchX = static_cast<int>(logicalX * pageWidth);
+    const int touchY = static_cast<int>(logicalY * pageHeight);
+    const int optionFontId = metrics.optionPopupUseSmallFont ? UI_10_FONT_ID : UI_12_FONT_ID;
+    const EpdFontFamily::Style optionStyle =
+        metrics.optionPopupOptionFontBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    const int optionLineHeight = renderer.getLineHeight(optionFontId);
+    const int titleLineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+    const int rowHeight = optionLineHeight + metrics.optionPopupSelectionVPadding * 2;
+
+    int maxTextWidth = renderer.getTextWidth(UI_12_FONT_ID, title.c_str(), EpdFontFamily::BOLD);
+    for (const auto& option : ownedStrings) {
+      maxTextWidth = std::max(maxTextWidth, renderer.getTextWidth(optionFontId, option.c_str(), optionStyle));
+    }
+
+    const int count = static_cast<int>(ownedStrings.size());
+    const int listHeight = rowHeight * count + metrics.optionPopupItemSpacing * (count - 1);
+    const int dialogWidth =
+        std::min((maxTextWidth + metrics.optionPopupInnerPadding * 2 +
+                  metrics.optionPopupSelectionHPadding * 2) *
+                     12 / 10,
+                 pageWidth - metrics.optionPopupDialogSideMargin * 2);
+    const int dialogHeight = titleLineHeight + metrics.optionPopupTitleGap + listHeight +
+                             metrics.optionPopupInnerPadding * 2;
+    const int dialogX = (pageWidth - dialogWidth) / 2;
+    const int dialogY = (pageHeight - dialogHeight) / 2;
+    const int itemX = dialogX + metrics.optionPopupInnerPadding;
+    const int itemWidth = dialogWidth - metrics.optionPopupInnerPadding * 2;
+    const int listY = dialogY + metrics.optionPopupInnerPadding + titleLineHeight + metrics.optionPopupTitleGap;
+
+    if (touchX < itemX || touchX >= itemX + itemWidth) return -1;
+    for (int i = 0; i < count; ++i) {
+      const int rowY = listY + i * (rowHeight + metrics.optionPopupItemSpacing);
+      if (touchY >= rowY && touchY < rowY + rowHeight) return i;
+    }
+    return -1;
+  }
 };

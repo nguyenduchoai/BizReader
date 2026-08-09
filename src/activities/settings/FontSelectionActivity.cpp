@@ -71,6 +71,19 @@ void FontSelectionActivity::onEnter() {
 void FontSelectionActivity::onExit() { Activity::onExit(); }
 
 void FontSelectionActivity::loop() {
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const int listTop = afterHeader + previewHeight + metrics_.verticalSpacing;
+    const int listHeight = usableHeight - previewHeight - metrics_.verticalSpacing;
+    const int touched = mappedInput.touchListIndex(Rect{0, listTop, renderer.getScreenWidth(), listHeight},
+                                                    fonts_.size(), selectedIndex_, false);
+    if (touched >= 0) {
+      selectedIndex_ = touched;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     SETTINGS.fontFamily = originalFontFamily_;
     strncpy(SETTINGS.sdFontFamilyName, originalSdFontFamilyName_, sizeof(SETTINGS.sdFontFamilyName) - 1);

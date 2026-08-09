@@ -13,4 +13,5 @@ class BizReaderTheme final : public LyraTheme {
   void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                       const std::function<std::string(int index)>& buttonLabel,
                       const std::function<UIIcon(int index)>& rowIcon) const override;
+  int getButtonMenuItemAt(Rect rect, int buttonCount, int x, int y) const override;
 };

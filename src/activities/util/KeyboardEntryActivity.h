@@ -223,4 +223,5 @@ class KeyboardEntryActivity : public Activity {
   bool insertChar(char c);
   void insertString(const std::string& str);
   void mapColContentBottom(int& col, bool goingUp) const;
+  bool selectTouchedKey(float logicalX, float logicalY);
 };

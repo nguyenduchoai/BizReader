@@ -5,6 +5,7 @@
 #include <array>
 
 class GfxRenderer;
+struct Rect;
 
 class MappedInputManager {
  public:
@@ -32,6 +33,13 @@ class MappedInputManager {
   Labels mapLabels(const char* back, const char* confirm, const char* previous, const char* next) const;
   // Returns the raw front button index that was pressed this frame (or -1 if none).
   int getPressedFrontButton() const;
+
+  // Returns a non-footer tap in normalized logical screen coordinates. The
+  // point follows the current renderer orientation, so activities can hit-test
+  // what the user actually touched.
+  bool getTouchTap(float& logicalX, float& logicalY) const;
+  int touchListIndex(const Rect& rect, int itemCount, int selectedIndex, bool hasSubtitle) const;
+  void cancelTouchConfirm() const { tsConfirm = false; }
 
   // True when the control axis is flipped relative to the physical buttons: the user opted into
   // orientation-following front buttons AND the screen is *currently rendered* rotated (INVERTED /
@@ -61,7 +69,7 @@ class MappedInputManager {
   // --- Touch gesture synthesis (Milestone B) --------------------------------
   // On touch boards (LilyGo T5 EPD47) there is one physical key, so the whole
   // logical control set is synthesized from GT911 gestures each update():
-  //   tap (release, no movement)  -> Confirm
+  //   tap (release, no movement)  -> direct hit-test + Confirm fallback
   //   long-press (in place, held) -> Back
   //   swipe                       -> a primitive direction (up/down/left/right)
   // touchSynthesizedEdge() then answers that direction for every logical button
@@ -75,6 +83,7 @@ class MappedInputManager {
   // unaffected. See [[lilygo-t5-epd47-touch-quirks]].
   void serviceTouchGestures() const;
   bool routeTouchHintTap(float panelX, float panelY) const;
+  void panelToLogical(float panelX, float panelY, float& logicalX, float& logicalY) const;
 
   // True this frame if `button` was produced by a touch gesture (tap/long-press/
   // swipe). Shared by wasPressed() and wasReleased(); false on non-touch boards.
@@ -93,6 +102,11 @@ class MappedInputManager {
   mutable bool tsSwipeRight = false;
   mutable bool tsHintPrevious = false;
   mutable bool tsHintNext = false;
+  mutable bool tsTapPageBack = false;
+  mutable bool tsTapPageForward = false;
+  mutable bool tsBodyTap = false;
+  mutable float tsTapX = 0.0f;
+  mutable float tsTapY = 0.0f;
   mutable std::array<TouchHintAction, 4> touchHintActions = {
       TouchHintAction::None, TouchHintAction::None, TouchHintAction::None, TouchHintAction::None};
   // True once a long-press has fired Back for the current contact; suppresses the

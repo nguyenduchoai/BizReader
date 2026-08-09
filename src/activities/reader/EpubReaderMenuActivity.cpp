@@ -50,7 +50,23 @@ void EpubReaderMenuActivity::onEnter() {
 void EpubReaderMenuActivity::onExit() { Activity::onExit(); }
 
 void EpubReaderMenuActivity::loop() {
-  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+  if (optionPopup.handleInput(mappedInput, renderer, [this] { requestUpdate(); })) return;
+
+  float touchX = 0.0f, touchY = 0.0f;
+  if (mappedInput.getTouchTap(touchX, touchY)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const Rect screen = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+    const int contentTop =
+        screen.y + metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
+    const int contentHeight = screen.height - contentTop - metrics.verticalSpacing;
+    const int touched = mappedInput.touchListIndex(Rect{screen.x, contentTop, screen.width, contentHeight},
+                                                    menuItems.size(), selectedIndex, false);
+    if (touched >= 0) {
+      selectedIndex = touched;
+    } else {
+      mappedInput.cancelTouchConfirm();
+    }
+  }
 
   // Handle navigation
   buttonNavigator.onNext([this] {

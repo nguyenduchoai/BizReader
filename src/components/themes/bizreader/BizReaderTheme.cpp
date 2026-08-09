@@ -123,3 +123,16 @@ void BizReaderTheme::drawButtonMenu(GfxRenderer& renderer, const Rect rect, cons
                       label.c_str(), true, labelStyle);
   }
 }
+
+int BizReaderTheme::getButtonMenuItemAt(const Rect rect, const int buttonCount, const int x, const int y) const {
+  const int sidePadding = BizReaderMetrics::values.contentSidePadding;
+  const int tileWidth = (rect.width - sidePadding * 2 - kMenuGap) / kMenuColumns;
+  for (int i = 0; i < buttonCount; ++i) {
+    const int column = i % kMenuColumns;
+    const int row = i / kMenuColumns;
+    const Rect tile{rect.x + sidePadding + column * (tileWidth + kMenuGap),
+                    rect.y + row * (kTileHeight + kMenuGap), tileWidth, kTileHeight};
+    if (x >= tile.x && x < tile.x + tile.width && y >= tile.y && y < tile.y + tile.height) return i;
+  }
+  return -1;
+}

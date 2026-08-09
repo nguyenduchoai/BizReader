@@ -409,6 +409,25 @@ void WifiSelectionActivity::loop() {
 
   // Handle network list state
   if (state == WifiSelectionState::NETWORK_LIST) {
+    if (!networks.empty()) {
+      float touchX = 0.0f, touchY = 0.0f;
+      if (mappedInput.getTouchTap(touchX, touchY)) {
+        auto& theme = UITheme::getInstance();
+        const auto metrics = theme.getMetrics();
+        const Rect screen = theme.getScreenSafeArea(renderer, true, false);
+        const int contentTop =
+            screen.y + metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
+        const int contentHeight = screen.height - contentTop - metrics.verticalSpacing * 2;
+        const int touched = mappedInput.touchListIndex(Rect{screen.x, contentTop, screen.width, contentHeight},
+                                                        networks.size(), selectedNetworkIndex, false);
+        if (touched >= 0) {
+          selectedNetworkIndex = touched;
+        } else {
+          mappedInput.cancelTouchConfirm();
+        }
+      }
+    }
+
     // Check for Back button to exit (cancel)
     if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
       onComplete(false);
