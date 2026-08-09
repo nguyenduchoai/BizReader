@@ -14,7 +14,7 @@ void main() {
     await tester.pumpWidget(BizReaderApp(controller: controller));
 
     expect(find.text('Kết nối BizReader'), findsOneWidget);
-    expect(find.text('Kết nối thiết bị'), findsOneWidget);
+    expect(find.text('Tìm BizReader'), findsOneWidget);
     expect(find.text('Hoài Nguyễn'), findsNothing);
   });
 

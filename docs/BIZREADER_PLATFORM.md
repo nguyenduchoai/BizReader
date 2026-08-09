@@ -30,6 +30,18 @@ Mã nguồn mở được tái sử dụng theo đúng giấy phép và có ghi 
 | Buzzer | Có | Không | Nhắc việc trên điện thoại |
 | Cảm biến/IMU | Có | Không | Dữ liệu thời tiết qua mạng |
 
+## Trạng thái triển khai
+
+BizTransfer v1 đã có trong firmware LilyGo và App Android:
+
+- BLE discovery, bonding và passkey hiển thị trên e-paper.
+- Dùng lại Wi-Fi đã lưu hoặc provisioning SSID/mật khẩu lần đầu.
+- Token ngắn hạn được trả qua BLE mã hóa.
+- HTTP stream vào `/Ebook`, file `.part`, kiểm tra kích thước và SHA-256.
+- Tự tắt Wi-Fi/server sau 5 phút; WebDAV thủ công vẫn hoạt động độc lập.
+
+Chi tiết byte-level và endpoint: [BizTransfer v1](./BIZTRANSFER_PROTOCOL.md).
+
 ## Thành phần hệ thống
 
 ### Firmware
@@ -40,7 +52,7 @@ cho các mini-app, còn `BizSyncService` chịu trách nhiệm:
 - REST API trong LAN.
 - Kho dữ liệu JSON trên thẻ nhớ.
 - Hàng đợi thay đổi khi ngoại tuyến.
-- BLE provisioning và discovery.
+- BLE provisioning, discovery và kích hoạt phiên BizTransfer.
 - Kích hoạt làm mới màn hình khi có nội dung mới.
 
 ### Ứng dụng Android
@@ -106,13 +118,13 @@ Các endpoint chạy cùng web server hiện có:
 | `POST` | `/api/v1/ota/check` | Kiểm tra bản firmware |
 | `POST` | `/api/v1/ota/install` | Cài bản đã xác thực |
 
-WebDAV tiếp tục đảm nhiệm tệp lớn. JSON sync không mang dữ liệu EPUB hoặc ảnh
-nhị phân trong body.
+BizTransfer HTTP hoặc WebDAV tiếp tục đảm nhiệm tệp lớn. JSON sync không mang
+dữ liệu EPUB hoặc ảnh nhị phân trong body.
 
 ## BLE
 
-BLE chỉ quảng bá khi chưa ghép nối, người dùng yêu cầu đổi Wi-Fi, hoặc giữ nút
-nguồn theo thời gian quy định. GATT cung cấp:
+BLE quảng bá trong thời gian thiết bị đang thức và tự dừng trước deep sleep.
+GATT cung cấp:
 
 - Device identity và capability.
 - Mã ghép nối dùng một lần hiển thị trên e-paper.
@@ -133,10 +145,10 @@ phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, n
 
 ## Trình tự triển khai
 
-1. **LAN/WebDAV:** ứng dụng Android kết nối thiết bị và gửi sách.
+1. **BizTransfer v1 (đã có):** BLE mở Wi-Fi, token phiên, gửi sách có SHA-256.
 2. **BizSync local:** API thiết bị, Notes, Todo và calendar wallpaper.
 3. **Media:** ảnh, dithering, theme Clock/Weather và wallpaper.
-4. **BLE provisioning:** discovery, ghép nối, đổi Wi-Fi.
+4. **BLE mở rộng:** quản lý bond, đổi tên thiết bị và chẩn đoán mạng.
 5. **Remote sync:** relay tùy chọn, nhiều thiết bị và thông báo.
 6. **Voice/OTA:** giọng nói trên Android, OTA từ ứng dụng và theo dõi lỗi.
 

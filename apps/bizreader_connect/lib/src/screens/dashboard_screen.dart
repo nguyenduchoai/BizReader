@@ -136,8 +136,8 @@ class DashboardScreen extends StatelessWidget {
               const SizedBox(height: 10),
               const Text(
                 'Mô-đun này cần API BizSync trong firmware. Hiện ứng dụng đã '
-                'có lớp kết nối WebDAV để gửi sách; BizSync sẽ dùng cùng địa '
-                'chỉ thiết bị và giữ dữ liệu trên thẻ nhớ.',
+                'có BLE để mở phiên Wi-Fi và gửi sách thẳng vào thẻ nhớ; '
+                'BizSync sẽ dùng cùng kênh bảo mật này cho dữ liệu hai chiều.',
               ),
               const SizedBox(height: 20),
               FilledButton(

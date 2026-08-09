@@ -16,6 +16,7 @@
 #include "activities/network/CalibreConnectActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "network/BizTransferService.h"
 #include "util/QrUtils.h"
 
 namespace {
@@ -62,6 +63,7 @@ int barsForRssi(int rssi, int currentBars) {
 
 void CrossPointWebServerActivity::onEnter() {
   Activity::onEnter();
+  BIZ_TRANSFER.pauseForManualTransfer();
 
   LOG_DBG("WEBACT", "Free heap at onEnter: %d bytes", ESP.getFreeHeap());
 
@@ -104,6 +106,8 @@ void CrossPointWebServerActivity::onExit() {
     }
     delay(30);
     silentRestart();
+  } else {
+    BIZ_TRANSFER.resumeAfterManualTransfer();
   }
 
   LOG_DBG("WEBACT", "Free heap at onExit end: %d bytes", ESP.getFreeHeap());

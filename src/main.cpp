@@ -31,6 +31,7 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/LoadingIcon.h"
+#include "network/BizTransferService.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 
@@ -236,6 +237,7 @@ static bool loadSleepFrameBuffer() {
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  BIZ_TRANSFER.stop();
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   const bool isQuickResumeSleep =
@@ -482,6 +484,7 @@ void setup() {
 
   // Ensure we're not still holding the power button before leaving setup
   waitForPowerRelease();
+  BIZ_TRANSFER.begin();
   allowSleepAt = millis() + 2000;
 }
 
@@ -499,6 +502,19 @@ void loop() {
   mappedInputManager.setReaderOnScreen(activityManager.isCurrentActivityReader());
   mappedInputManager.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
+  BIZ_TRANSFER.loop();
+
+  uint32_t pairingPasskey = 0;
+  if (BIZ_TRANSFER.takePairingPasskey(pairingPasskey)) {
+    char pairingMessage[96];
+    snprintf(pairingMessage, sizeof(pairingMessage), tr(STR_BIZREADER_PAIRING_CODE),
+             static_cast<unsigned long>(pairingPasskey));
+    RenderLock lock;
+    GUI.drawPopup(renderer, pairingMessage);
+  }
+  if (BIZ_TRANSFER.takePairingFinished()) {
+    activityManager.requestUpdate();
+  }
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
@@ -532,7 +548,7 @@ void loop() {
   // auto-sleep mid-use.
   static unsigned long lastActivityTime = millis();
   if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity() ||
-      activityManager.preventAutoSleep()) {
+      activityManager.preventAutoSleep() || BIZ_TRANSFER.isBusy()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
@@ -609,7 +625,7 @@ void loop() {
   // Add delay at the end of the loop to prevent tight spinning
   // When an activity requests skip loop delay (e.g., webserver running), use yield() for faster response
   // Otherwise, use longer delay to save power
-  if (activityManager.skipLoopDelay()) {
+  if (activityManager.skipLoopDelay() || BIZ_TRANSFER.shouldSkipLoopDelay()) {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {

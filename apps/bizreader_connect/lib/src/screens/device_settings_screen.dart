@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
-import '../models/device_config.dart';
 
 class DeviceSettingsScreen extends StatefulWidget {
   const DeviceSettingsScreen({super.key, required this.controller});
@@ -37,12 +36,20 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    final success = await widget.controller.configure(
-      DeviceConfig(
+    var success = await widget.controller.configure(
+      widget.controller.device.copyWith(
         name: _nameController.text.trim(),
         host: _hostController.text.trim(),
       ),
+      probe: !widget.controller.device.usesBizTransfer,
     );
+    if (success && widget.controller.device.usesBizTransfer) {
+      try {
+        await widget.controller.prepareTransfer();
+      } catch (_) {
+        success = false;
+      }
+    }
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -99,11 +106,26 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Kết nối LAN / WebDAV',
+                          widget.controller.device.usesBizTransfer
+                              ? 'Bluetooth + Wi-Fi'
+                              : 'Kết nối LAN / WebDAV',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 16),
+                        if (widget.controller.device.usesBizTransfer) ...[
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.bluetooth_connected),
+                            title: const Text('Đã ghép đôi BizReader'),
+                            subtitle: Text(
+                              widget.controller.device.bleId,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                        ],
                         TextField(
                           controller: _nameController,
                           decoration: const InputDecoration(
@@ -153,7 +175,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                         leading: const Icon(Icons.info_outline),
                         title: const Text('Giới thiệu'),
                         subtitle: const Text('BizReader • Hoài Nguyễn'),
-                        trailing: const Text('0.1.0'),
+                        trailing: const Text('0.2.0'),
                       ),
                     ],
                   ),

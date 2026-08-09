@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import '../services/webdav_device_client.dart';
 
-enum TransferStatus { waiting, uploading, done, failed }
+enum TransferStatus { waiting, preparing, uploading, done, failed }
 
 class TransferItem {
   TransferItem(this.name);
@@ -14,6 +14,7 @@ class TransferItem {
   final String name;
   TransferStatus status = TransferStatus.waiting;
   String? message;
+  double progress = 0;
 }
 
 class LibraryScreen extends StatefulWidget {
@@ -53,19 +54,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ..addAll(usable.map((file) => TransferItem(file.name)));
     });
 
-    final client = WebDavDeviceClient(widget.controller.device);
+    WebDavDeviceClient? client;
     try {
+      final device = await widget.controller.prepareTransfer();
+      client = WebDavDeviceClient(device);
       await client.probe();
       await client.ensureDirectory('/Ebook');
       for (var index = 0; index < usable.length; index++) {
         final selected = usable[index];
         final item = _transfers[index];
-        setState(() => item.status = TransferStatus.uploading);
+        setState(() => item.status = TransferStatus.preparing);
         try {
           await client.uploadFile(
             remotePath: '/Ebook/${selected.name}',
             file: File(selected.path!),
             contentType: _contentType(selected.extension),
+            onProgress: (sent, total) {
+              if (!mounted) return;
+              setState(() {
+                item.status = TransferStatus.uploading;
+                item.progress = total == 0 ? 0 : sent / total;
+              });
+            },
           );
           setState(() => item.status = TransferStatus.done);
         } on DeviceConnectionException catch (error) {
@@ -90,7 +100,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } finally {
-      client.close();
+      client?.close();
+      if (widget.controller.device.usesBizTransfer) {
+        await widget.controller.finishTransfer();
+      }
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -133,9 +146,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'Hỗ trợ EPUB, TXT, XTC, XTCH và BMP. Máy đọc phải '
-                          'đang mở Truyền tệp và điện thoại ở cùng mạng.',
+                        Text(
+                          widget.controller.device.usesBizTransfer
+                              ? 'Hỗ trợ EPUB, TXT, XTC, XTCH và BMP. App sẽ tự '
+                                    'mở Wi-Fi trên BizReader trước khi gửi.'
+                              : 'Hỗ trợ EPUB, TXT, XTC, XTCH và BMP. Máy đọc '
+                                    'phải đang mở Truyền tệp và điện thoại ở cùng mạng.',
                         ),
                         const SizedBox(height: 16),
                         FilledButton.icon(
@@ -201,10 +217,15 @@ class _TransferRow extends StatelessWidget {
         const Color(0xFF68707B),
         'Đang chờ',
       ),
+      TransferStatus.preparing => (
+        Icons.fingerprint,
+        const Color(0xFF356A8A),
+        'Đang kiểm tra tệp',
+      ),
       TransferStatus.uploading => (
         Icons.sync,
         const Color(0xFF8B651D),
-        'Đang gửi',
+        'Đang gửi ${(item.progress * 100).round()}%',
       ),
       TransferStatus.done => (
         Icons.check_circle,

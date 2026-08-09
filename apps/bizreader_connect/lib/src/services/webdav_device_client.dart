@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/device_config.dart';
@@ -32,6 +33,20 @@ class WebDavDeviceClient {
 
   Future<void> probe() async {
     try {
+      if (device.transferToken.isNotEmpty) {
+        final response = await _client
+            .get(
+              device.baseUri.resolve('/api/bizreader/status'),
+              headers: {'X-BizReader-Token': device.transferToken},
+            )
+            .timeout(const Duration(seconds: 6));
+        if (response.statusCode != 200) {
+          throw DeviceConnectionException(
+            'Thiết bị phản hồi HTTP ${response.statusCode}.',
+          );
+        }
+        return;
+      }
       final request = http.Request('OPTIONS', device.baseUri);
       final response = await _client
           .send(request)
@@ -57,6 +72,7 @@ class WebDavDeviceClient {
   }
 
   Future<void> ensureDirectory(String path) async {
+    if (device.transferToken.isNotEmpty) return;
     final request = http.Request('MKCOL', pathUri(path));
     final response = await _client
         .send(request)
@@ -75,15 +91,29 @@ class WebDavDeviceClient {
     required String remotePath,
     required File file,
     required String contentType,
+    void Function(int sent, int total)? onProgress,
   }) async {
+    final total = await file.length();
+    final digest = await sha256.bind(file.openRead()).first;
     final request = http.StreamedRequest('PUT', pathUri(remotePath));
-    request.contentLength = await file.length();
+    request.contentLength = total;
     request.headers['Content-Type'] = contentType;
+    request.headers['X-Content-SHA256'] = digest.toString();
+    if (device.transferToken.isNotEmpty) {
+      request.headers['X-BizReader-Token'] = device.transferToken;
+    }
 
     final responseFuture = _client
         .send(request)
         .timeout(const Duration(minutes: 4));
-    await request.sink.addStream(file.openRead());
+    var sent = 0;
+    await request.sink.addStream(
+      file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(sent, total);
+        return chunk;
+      }),
+    );
     await request.sink.close();
     final response = await responseFuture;
 
@@ -102,7 +132,11 @@ class WebDavDeviceClient {
     final response = await _client
         .put(
           pathUri(remotePath),
-          headers: {'Content-Type': contentType},
+          headers: {
+            'Content-Type': contentType,
+            if (device.transferToken.isNotEmpty)
+              'X-BizReader-Token': device.transferToken,
+          },
           body: bytes,
         )
         .timeout(const Duration(seconds: 30));
