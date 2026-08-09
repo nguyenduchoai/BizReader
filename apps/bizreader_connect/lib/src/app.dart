@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'app_controller.dart';
-import 'screens/device_setup_screen.dart';
 import 'screens/home_shell.dart';
 
 class BizReaderApp extends StatelessWidget {
@@ -86,12 +85,7 @@ class BizReaderApp extends StatelessWidget {
       ),
       home: ListenableBuilder(
         listenable: controller,
-        builder: (context, _) {
-          if (!controller.device.isConfigured) {
-            return DeviceSetupScreen(controller: controller);
-          }
-          return HomeShell(controller: controller);
-        },
+        builder: (context, _) => HomeShell(controller: controller),
       ),
     );
   }

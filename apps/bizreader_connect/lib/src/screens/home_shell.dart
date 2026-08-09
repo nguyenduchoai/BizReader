@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import 'dashboard_screen.dart';
 import 'device_settings_screen.dart';
+import 'device_setup_screen.dart';
 import 'library_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -23,9 +24,13 @@ class _HomeShellState extends State<HomeShell> {
       DashboardScreen(
         controller: widget.controller,
         openLibrary: () => setState(() => _index = 1),
+        openDevice: () => setState(() => _index = 2),
       ),
       LibraryScreen(controller: widget.controller),
-      DeviceSettingsScreen(controller: widget.controller),
+      if (widget.controller.device.isConfigured)
+        DeviceSettingsScreen(controller: widget.controller)
+      else
+        DeviceSetupScreen(controller: widget.controller),
     ];
 
     return Scaffold(

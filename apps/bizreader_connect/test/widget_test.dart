@@ -29,17 +29,22 @@ void main() {
     expect(controller.books.single.title, 'Sách thật');
   });
 
-  testWidgets('shows device setup when no device is stored', (tester) async {
+  testWidgets('opens dashboard before device setup', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final controller = AppController(DevicePreferences());
     await controller.load();
 
     await tester.pumpWidget(BizReaderApp(controller: controller));
+    await tester.pumpAndSettle();
 
+    expect(find.text('Tổng quan'), findsOneWidget);
+    expect(find.text('Chưa thêm thiết bị'), findsOneWidget);
+    expect(find.text('Kết nối BizReader'), findsNothing);
+
+    await tester.tap(find.text('Thiết bị'));
+    await tester.pumpAndSettle();
     expect(find.text('Kết nối BizReader'), findsOneWidget);
     expect(find.text('Tìm BizReader'), findsOneWidget);
-    expect(find.textContaining('Truyền tệp > Kết nối App'), findsOneWidget);
-    expect(find.text('Hoài Nguyễn'), findsNothing);
   });
 
   testWidgets('demo mode opens a populated library and reader', (tester) async {
@@ -48,6 +53,8 @@ void main() {
     await controller.load();
 
     await tester.pumpWidget(BizReaderApp(controller: controller));
+    await tester.tap(find.text('Thiết bị'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Xem bản demo'));
     await tester.pumpAndSettle();
 

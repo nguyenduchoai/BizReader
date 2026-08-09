@@ -7,10 +7,12 @@ class DashboardScreen extends StatelessWidget {
     super.key,
     required this.controller,
     required this.openLibrary,
+    required this.openDevice,
   });
 
   final AppController controller;
   final VoidCallback openLibrary;
+  final VoidCallback openDevice;
 
   @override
   Widget build(BuildContext context) {
@@ -24,15 +26,25 @@ class DashboardScreen extends StatelessWidget {
               children: [
                 Text(controller.device.name),
                 const SizedBox(height: 2),
-                _ConnectionLabel(state: controller.connectionState),
+                _ConnectionLabel(
+                  state: controller.connectionState,
+                  configured: controller.device.isConfigured,
+                ),
               ],
             ),
             actions: [
-              IconButton(
-                onPressed: controller.checkConnection,
-                tooltip: 'Kiểm tra kết nối',
-                icon: const Icon(Icons.sync),
-              ),
+              if (controller.device.isConfigured)
+                IconButton(
+                  onPressed: controller.checkConnection,
+                  tooltip: 'Kiểm tra kết nối',
+                  icon: const Icon(Icons.sync),
+                )
+              else
+                IconButton(
+                  onPressed: openDevice,
+                  tooltip: 'Thêm thiết bị',
+                  icon: const Icon(Icons.add_link),
+                ),
               const SizedBox(width: 8),
             ],
           ),
@@ -63,7 +75,7 @@ class DashboardScreen extends StatelessWidget {
                         _AppTile(
                           icon: Icons.menu_book_outlined,
                           title: 'Sách',
-                          value: 'Gửi EPUB',
+                          value: 'Đọc và đồng bộ',
                           tint: const Color(0xFFEAF2EE),
                           onTap: openLibrary,
                         ),
@@ -153,24 +165,33 @@ class DashboardScreen extends StatelessWidget {
 }
 
 class _ConnectionLabel extends StatelessWidget {
-  const _ConnectionLabel({required this.state});
+  const _ConnectionLabel({required this.state, required this.configured});
 
   final DeviceConnectionState state;
+  final bool configured;
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = switch (state) {
-      DeviceConnectionState.online => ('Đang kết nối', const Color(0xFF2F7D4C)),
-      DeviceConnectionState.offline => ('Ngoại tuyến', const Color(0xFF9A3F35)),
-      DeviceConnectionState.checking => (
-        'Đang kiểm tra',
-        const Color(0xFF8B651D),
-      ),
-      DeviceConnectionState.unknown => (
-        'Chưa kiểm tra',
-        const Color(0xFF68707B),
-      ),
-    };
+    final (label, color) = !configured
+        ? ('Chưa thêm thiết bị', const Color(0xFF68707B))
+        : switch (state) {
+            DeviceConnectionState.online => (
+              'Đang kết nối',
+              const Color(0xFF2F7D4C),
+            ),
+            DeviceConnectionState.offline => (
+              'Ngoại tuyến',
+              const Color(0xFF9A3F35),
+            ),
+            DeviceConnectionState.checking => (
+              'Đang kiểm tra',
+              const Color(0xFF8B651D),
+            ),
+            DeviceConnectionState.unknown => (
+              'Chưa kiểm tra',
+              const Color(0xFF68707B),
+            ),
+          };
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
