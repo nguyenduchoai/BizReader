@@ -117,7 +117,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.bluetooth_connected),
-                            title: const Text('Đã ghép đôi BizReader'),
+                            title: const Text('Đã lưu BizReader'),
                             subtitle: Text(
                               widget.controller.device.bleId,
                               maxLines: 1,
@@ -175,7 +175,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                         leading: const Icon(Icons.info_outline),
                         title: const Text('Giới thiệu'),
                         subtitle: const Text('BizReader • Hoài Nguyễn'),
-                        trailing: const Text('0.2.0'),
+                        trailing: const Text('0.2.1'),
                       ),
                     ],
                   ),

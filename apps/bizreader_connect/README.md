@@ -4,8 +4,8 @@
 
 ## Chức năng hiện có
 
-- Tìm và ghép đôi BizReader bằng BLE với mã 6 số trên màn hình e-paper.
-- Dùng Wi-Fi đã lưu hoặc cấu hình Wi-Fi 2.4 GHz lần đầu qua BLE mã hóa.
+- Tìm BizReader bằng BLE và chạm để lưu, không cần mã ghép đôi.
+- Yêu cầu firmware dùng Wi-Fi đã lưu; App không hỏi SSID hoặc mật khẩu.
 - Tự nhận IP/token và mở phiên truyền sách, không cần vào menu **Truyền tệp**.
 - Chọn và gửi nhiều tệp EPUB, TXT, XTC, XTCH hoặc BMP vào `/Ebook`.
 - Tính SHA-256 trước khi gửi và hiển thị phần trăm truyền.
@@ -26,9 +26,9 @@ APK release ARM64 nằm tại:
 build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-Để BizReader đang thức, chọn **Tìm BizReader** trong App và xác nhận mã ghép
-đôi. Lần đầu nhập Wi-Fi 2.4 GHz; các lần sau App tự yêu cầu thiết bị mở phiên
-Wi-Fi trước khi gửi sách. Android cần quyền quét/kết nối Bluetooth.
+Để BizReader đang thức, chọn **Tìm BizReader** rồi chạm thiết bị để lưu. Khi gửi
+sách, App tự yêu cầu thiết bị mở phiên Wi-Fi. BizReader phải có sẵn một mạng đã
+lưu từ menu Wi-Fi/Truyền tệp; Android cần quyền quét/kết nối Bluetooth.
 
 ## Phạm vi tiếp theo
 

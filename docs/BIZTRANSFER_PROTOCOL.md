@@ -9,18 +9,17 @@ nguyên cho các profile khác và làm đường dự phòng.
 | Thành phần | UUID | Thuộc tính |
 | --- | --- | --- |
 | Service | `7d2f1000-8d4f-4f5b-a8d0-53b495a9b001` | Advertise |
-| Command | `7d2f1001-8d4f-4f5b-a8d0-53b495a9b001` | Write, encrypted, authenticated |
-| Status | `7d2f1002-8d4f-4f5b-a8d0-53b495a9b001` | Read/notify, encrypted |
+| Command | `7d2f1001-8d4f-4f5b-a8d0-53b495a9b001` | Write |
+| Status | `7d2f1002-8d4f-4f5b-a8d0-53b495a9b001` | Read/notify |
 | Info | `7d2f1003-8d4f-4f5b-a8d0-53b495a9b001` | Read |
 
-Thiết bị dùng LE Secure Connections, bonding và passkey 6 số hiển thị trên
-e-paper. Mật khẩu Wi-Fi chỉ được ghi qua characteristic đã mã hóa.
+BLE không bonding và không yêu cầu passkey. Firmware không nhận SSID hoặc mật
+khẩu qua BLE; lệnh `start` chỉ sử dụng mạng Wi-Fi đã lưu sẵn trên BizReader.
 
 Lệnh JSON:
 
 ```json
 {"op":"start"}
-{"op":"provision","ssid":"WiFi 2.4G","password":"secret"}
 {"op":"stop"}
 {"op":"ping"}
 ```
@@ -51,10 +50,14 @@ tên sang file đích. File dở bị xóa khi lỗi, hủy hoặc server dừng
 ## Trình tự
 
 1. App quét service BLE và kết nối.
-2. Android ghép đôi bằng passkey trên màn hình BizReader.
-3. App gửi `start`; nếu chưa có mạng đã lưu thì gửi `provision`.
-4. Firmware trả IP và token phiên qua notification đã mã hóa.
+2. Người dùng chạm thiết bị để App lưu BLE ID, không cần ghép đôi.
+3. Khi gửi sách, App kết nối BLE và gửi `start`.
+4. Firmware dùng Wi-Fi đã lưu rồi trả IP và token phiên qua BLE.
 5. App tính SHA-256 và stream file bằng HTTP `PUT`.
 6. Firmware xác minh, hoàn tất file và thông báo `complete`.
 7. Sau 5 phút không hoạt động, firmware tắt HTTP và Wi-Fi; BLE tồn tại đến khi
    thiết bị ngủ để lần truyền sau có thể bắt đầu mà không vào menu WebDAV.
+
+BLE mở coi khoảng cách gần là ranh giới tin cậy. Một BLE client ở gần có thể
+kích hoạt phiên và đọc token ngắn hạn; mật khẩu Wi-Fi không được truyền qua
+kênh này.

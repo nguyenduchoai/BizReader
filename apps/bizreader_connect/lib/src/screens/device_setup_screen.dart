@@ -85,123 +85,8 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
 
   Future<void> _selectDevice(BizReaderBleDevice device) async {
     await _stopScan();
-    setState(() {
-      _connecting = true;
-      _message = 'Kiểm tra mã ghép đôi trên màn hình BizReader.';
-    });
-    try {
-      await widget.controller.pairDevice(device);
-    } on BizTransferException catch (error) {
-      if (!mounted) return;
-      final canRetryWifi =
-          error.message == 'Chưa có Wi-Fi đã lưu' ||
-          error.message == 'Không kết nối được Wi-Fi';
-      if (!canRetryWifi) {
-        setState(() {
-          _connecting = false;
-          _message = error.message;
-        });
-        return;
-      }
-      final credentials = await _askWifiCredentials();
-      if (credentials == null) {
-        setState(() {
-          _connecting = false;
-          _message = widget.controller.connectionMessage;
-        });
-        return;
-      }
-      try {
-        await widget.controller.pairDevice(
-          device,
-          ssid: credentials.$1,
-          password: credentials.$2,
-        );
-      } on BizTransferException catch (error) {
-        if (mounted) {
-          setState(() {
-            _connecting = false;
-            _message = error.message;
-          });
-        }
-      }
-    }
-  }
-
-  Future<(String, String)?> _askWifiCredentials() async {
-    final ssidController = TextEditingController();
-    final passwordController = TextEditingController();
-    var obscurePassword = true;
-    final result = await showDialog<(String, String)>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Kết nối Wi-Fi lần đầu'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Nhập Wi-Fi 2.4 GHz mà điện thoại và BizReader sẽ cùng sử dụng.',
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: ssidController,
-                autofocus: true,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Tên Wi-Fi (SSID)',
-                  prefixIcon: Icon(Icons.wifi),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                obscureText: obscurePassword,
-                onSubmitted: (_) {
-                  final ssid = ssidController.text.trim();
-                  if (ssid.isNotEmpty) {
-                    Navigator.pop(context, (ssid, passwordController.text));
-                  }
-                },
-                decoration: InputDecoration(
-                  labelText: 'Mật khẩu',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    tooltip: obscurePassword ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
-                    onPressed: () => setDialogState(
-                      () => obscurePassword = !obscurePassword,
-                    ),
-                    icon: Icon(
-                      obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Hủy'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final ssid = ssidController.text.trim();
-                if (ssid.isNotEmpty) {
-                  Navigator.pop(context, (ssid, passwordController.text));
-                }
-              },
-              child: const Text('Kết nối'),
-            ),
-          ],
-        ),
-      ),
-    );
-    ssidController.dispose();
-    passwordController.dispose();
-    return result;
+    setState(() => _connecting = true);
+    await widget.controller.saveBleDevice(device);
   }
 
   Future<void> _connectManual() async {
@@ -244,8 +129,8 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Để máy đọc đang thức. App sẽ ghép đôi bằng Bluetooth, mở Wi-Fi '
-              'tạm thời và gửi sách thẳng vào thẻ nhớ.',
+              'Để máy đọc đang thức. Chạm BizReader để lưu thiết bị; khi gửi '
+              'sách App sẽ tự mở Wi-Fi đã lưu trên máy đọc.',
             ),
             const SizedBox(height: 20),
             FilledButton.icon(

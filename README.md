@@ -13,7 +13,7 @@ loại bỏ trình đọc sách, WebDAV hoặc Calibre hiện có:
 - [Kiến trúc App, firmware và đồng bộ BizSync](./docs/BIZREADER_PLATFORM.md)
 - [Giao thức BLE + Wi-Fi BizTransfer v1](./docs/BIZTRANSFER_PROTOCOL.md)
 
-BizTransfer cho phép App ghép đôi BLE, yêu cầu thiết bị tự kết nối Wi-Fi và
+BizTransfer cho phép App lưu thiết bị BLE, yêu cầu thiết bị tự kết nối Wi-Fi đã lưu và
 stream sách vào `/Ebook` trên thẻ SD. Firmware xác minh SHA-256 trước khi hoàn
 tất file; WebDAV truyền thống vẫn là phương án dự phòng.
 

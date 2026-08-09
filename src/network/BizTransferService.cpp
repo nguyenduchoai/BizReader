@@ -80,21 +80,6 @@ class BizTransferService::Impl {
       NimBLEDevice::startAdvertising();
     }
 
-    uint32_t onPassKeyDisplay() override {
-      impl.pairingPasskeyPending.store(true);
-      return impl.pairingPasskey;
-    }
-
-    void onAuthenticationComplete(NimBLEConnInfo& connection) override {
-      if (!connection.isEncrypted()) {
-        NimBLEDevice::getServer()->disconnect(connection.getConnHandle());
-        LOG_ERR("BIZ", "BLE encryption failed");
-        return;
-      }
-      impl.pairingFinished.store(true);
-      LOG_INF("BIZ", "BLE pairing encrypted and authenticated");
-    }
-
    private:
     Impl& impl;
   };
@@ -103,8 +88,7 @@ class BizTransferService::Impl {
    public:
     explicit CommandCallbacks(Impl& impl) : impl(impl) {}
 
-    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override {
-      if (!connection.isEncrypted()) return;
+    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
       const std::string value = characteristic->getValue();
       if (value.empty() || value.size() >= COMMAND_BUFFER_SIZE) return;
 
@@ -127,13 +111,8 @@ class BizTransferService::Impl {
     uint8_t mac[6];
     WiFi.macAddress(mac);
     snprintf(deviceName, sizeof(deviceName), "BizReader-%02X%02X", mac[4], mac[5]);
-    pairingPasskey = 100000 + (esp_random() % 900000);
-
     NimBLEDevice::init(deviceName);
     NimBLEDevice::setPower(3);
-    NimBLEDevice::setSecurityAuth(true, true, true);
-    NimBLEDevice::setSecurityPasskey(pairingPasskey);
-    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
 
     bleServer = NimBLEDevice::createServer();
     if (!bleServer) {
@@ -151,13 +130,10 @@ class BizTransferService::Impl {
       return;
     }
 
-    commandCharacteristic = service->createCharacteristic(
-        BizTransferService::COMMAND_UUID,
-        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN, COMMAND_BUFFER_SIZE - 1);
+    commandCharacteristic = service->createCharacteristic(BizTransferService::COMMAND_UUID, NIMBLE_PROPERTY::WRITE,
+                                                          COMMAND_BUFFER_SIZE - 1);
     statusCharacteristic = service->createCharacteristic(
-        BizTransferService::STATUS_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN,
-        STATUS_BUFFER_SIZE - 1);
+        BizTransferService::STATUS_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, STATUS_BUFFER_SIZE - 1);
     NimBLECharacteristic* infoCharacteristic =
         service->createCharacteristic(BizTransferService::INFO_UUID, NIMBLE_PROPERTY::READ, 96);
 
@@ -208,7 +184,6 @@ class BizTransferService::Impl {
       WiFi.mode(WIFI_OFF);
     }
     token[0] = '\0';
-    pendingSave = false;
     uploadReceived = 0;
     uploadTotal = 0;
     setStatus(TransferState::Idle, "Đã tắt truyền sách");
@@ -280,34 +255,23 @@ class BizTransferService::Impl {
       const std::string& lastSsid = WIFI_STORE.getLastConnectedSsid();
       const WifiCredential* credential = WIFI_STORE.findCredential(lastSsid);
       if (lastSsid.empty() || !credential) {
-        setStatus(TransferState::Error, "Chưa có Wi-Fi đã lưu");
+        setStatus(TransferState::Error, "Hãy lưu Wi-Fi trên BizReader trước");
         return;
       }
-      connectWifi(credential->ssid.c_str(), credential->password.c_str(), false);
-      return;
-    }
-    if (strcmp(operation, "provision") == 0) {
-      const char* ssid = document["ssid"] | "";
-      const char* password = document["password"] | "";
-      if (ssid[0] == '\0' || strlen(ssid) > 32 || strlen(password) > 64) {
-        setStatus(TransferState::Error, "Thông tin Wi-Fi không hợp lệ");
-        return;
-      }
-      connectWifi(ssid, password, true);
+      connectWifi(credential->ssid.c_str(), credential->password.c_str());
       return;
     }
 
     setStatus(TransferState::Error, "Lệnh BLE không được hỗ trợ");
   }
 
-  void connectWifi(const char* ssid, const char* password, bool saveCredential) {
+  void connectWifi(const char* ssid, const char* password) {
     if (httpServer) {
       httpServer->stop();
       httpServer.reset();
     }
     MDNS.end();
     token[0] = '\0';
-    pendingSave = saveCredential;
     strlcpy(pendingSsid, ssid, sizeof(pendingSsid));
     strlcpy(pendingPassword, password, sizeof(pendingPassword));
 
@@ -323,11 +287,7 @@ class BizTransferService::Impl {
   }
 
   void onWifiConnected() {
-    if (pendingSave) {
-      WIFI_STORE.addCredential(pendingSsid, pendingPassword);
-    }
     WIFI_STORE.setLastConnectedSsid(pendingSsid);
-    pendingSave = false;
 
     uint8_t randomBytes[TOKEN_BYTES];
     esp_fill_random(randomBytes, sizeof(randomBytes));
@@ -456,14 +416,10 @@ class BizTransferService::Impl {
   NimBLECharacteristic* statusCharacteristic = nullptr;
   std::unique_ptr<WebServer> httpServer;
   std::atomic<bool> bleConnected{false};
-  std::atomic<bool> pairingPasskeyPending{false};
-  std::atomic<bool> pairingFinished{false};
   bool bleStarted = false;
   TransferState state = TransferState::Idle;
-  uint32_t pairingPasskey = 0;
   unsigned long connectionStartedAt = 0;
   unsigned long lastSessionActivityAt = 0;
-  bool pendingSave = false;
   char deviceName[24] = "BizReader";
   char token[TOKEN_BYTES * 2 + 1] = {};
   char pendingSsid[33] = {};
@@ -521,25 +477,6 @@ bool BizTransferService::isBusy() const {
 bool BizTransferService::shouldSkipLoopDelay() const {
 #ifdef FREEINK_DEVICE_LILYGO_EPD47
   return impl && impl->httpServer != nullptr;
-#else
-  return false;
-#endif
-}
-
-bool BizTransferService::takePairingPasskey(uint32_t& passkey) {
-#ifdef FREEINK_DEVICE_LILYGO_EPD47
-  if (impl && impl->pairingPasskeyPending.exchange(false)) {
-    passkey = impl->pairingPasskey;
-    return true;
-  }
-#endif
-  (void)passkey;
-  return false;
-}
-
-bool BizTransferService::takePairingFinished() {
-#ifdef FREEINK_DEVICE_LILYGO_EPD47
-  return impl && impl->pairingFinished.exchange(false);
 #else
   return false;
 #endif

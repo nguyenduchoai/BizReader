@@ -504,18 +504,6 @@ void loop() {
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
   BIZ_TRANSFER.loop();
 
-  uint32_t pairingPasskey = 0;
-  if (BIZ_TRANSFER.takePairingPasskey(pairingPasskey)) {
-    char pairingMessage[96];
-    snprintf(pairingMessage, sizeof(pairingMessage), tr(STR_BIZREADER_PAIRING_CODE),
-             static_cast<unsigned long>(pairingPasskey));
-    RenderLock lock;
-    GUI.drawPopup(renderer, pairingMessage);
-  }
-  if (BIZ_TRANSFER.takePairingFinished()) {
-    activityManager.requestUpdate();
-  }
-
   renderer.setFadingFix(SETTINGS.fadingFix);
 
   if (Serial && millis() - lastMemPrint >= 10000) {

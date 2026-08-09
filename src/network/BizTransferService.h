@@ -22,8 +22,6 @@ class BizTransferService {
 
   bool isBusy() const;
   bool shouldSkipLoopDelay() const;
-  bool takePairingPasskey(uint32_t& passkey);
-  bool takePairingFinished();
 
   bool authorize(const String& token) const;
   void onUploadStarted(const String& filename, size_t total);

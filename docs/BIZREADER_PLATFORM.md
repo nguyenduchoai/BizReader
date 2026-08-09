@@ -5,7 +5,7 @@
 BizReader giữ trải nghiệm đọc EPUB của CrossPoint và bổ sung mô hình điều
 khiển tương tự reTerminal Sticky dưới thương hiệu, giao diện và giao thức riêng:
 
-- Ghép nối thiết bị và cấu hình Wi-Fi.
+- Lưu thiết bị BLE và kích hoạt Wi-Fi đã cấu hình trên máy đọc.
 - Gửi sách, ghi chú, việc cần làm, lịch, thời tiết và ảnh.
 - Hiển thị màn hình nghỉ có lịch hoặc ảnh cá nhân.
 - Đồng bộ hai chiều, hoạt động ngoại tuyến và tự đồng bộ lại.
@@ -23,7 +23,7 @@ Mã nguồn mở được tái sử dụng theo đúng giấy phép và có ghi 
 | Màn hình | 800 x 480, 3.97 inch | 960 x 540, 4.7 inch | Layout theo kích thước động |
 | Cảm ứng | GT911 | GT911 | Dùng FreeInk InputManager |
 | Thẻ nhớ | microSD | microSD | Nguồn dữ liệu cục bộ |
-| Wi-Fi/BLE | Có | Có | LAN, provisioning và đồng bộ |
+| Wi-Fi/BLE | Có | Có | LAN, discovery và đồng bộ |
 | Nút dùng được | 3 | 1 nút ứng dụng | Cảm ứng là điều khiển chính |
 | Micro | PDM | Không | Nhận giọng nói trên điện thoại |
 | RTC | PCF8563 | Không | NTP + thời gian hệ thống |
@@ -34,9 +34,9 @@ Mã nguồn mở được tái sử dụng theo đúng giấy phép và có ghi 
 
 BizTransfer v1 đã có trong firmware LilyGo và App Android:
 
-- BLE discovery, bonding và passkey hiển thị trên e-paper.
-- Dùng lại Wi-Fi đã lưu hoặc provisioning SSID/mật khẩu lần đầu.
-- Token ngắn hạn được trả qua BLE mã hóa.
+- BLE discovery mở, chạm để lưu thiết bị, không bonding hoặc passkey.
+- Chỉ dùng Wi-Fi đã lưu trên BizReader; App không nhận mật khẩu mạng.
+- Token HTTP ngắn hạn được trả qua BLE khi thiết bị ở gần.
 - HTTP stream vào `/Ebook`, file `.part`, kiểm tra kích thước và SHA-256.
 - Tự tắt Wi-Fi/server sau 5 phút; WebDAV thủ công vẫn hoạt động độc lập.
 
@@ -52,7 +52,7 @@ cho các mini-app, còn `BizSyncService` chịu trách nhiệm:
 - REST API trong LAN.
 - Kho dữ liệu JSON trên thẻ nhớ.
 - Hàng đợi thay đổi khi ngoại tuyến.
-- BLE provisioning, discovery và kích hoạt phiên BizTransfer.
+- BLE discovery và kích hoạt phiên BizTransfer bằng Wi-Fi đã lưu.
 - Kích hoạt làm mới màn hình khi có nội dung mới.
 
 ### Ứng dụng Android
@@ -114,7 +114,7 @@ Các endpoint chạy cùng web server hiện có:
 | `GET` | `/api/v1/sync?since=<rev>` | Lấy thay đổi sau revision |
 | `POST` | `/api/v1/sync` | Đẩy một lô thay đổi |
 | `POST` | `/api/v1/display/activate` | Mở mini-app hoặc wallpaper |
-| `POST` | `/api/v1/wifi` | Cấu hình Wi-Fi sau khi ghép nối |
+| `POST` | `/api/v1/wifi` | Cấu hình Wi-Fi qua phiên LAN đã xác thực |
 | `POST` | `/api/v1/ota/check` | Kiểm tra bản firmware |
 | `POST` | `/api/v1/ota/install` | Cài bản đã xác thực |
 
@@ -126,10 +126,9 @@ dữ liệu EPUB hoặc ảnh nhị phân trong body.
 BLE quảng bá trong thời gian thiết bị đang thức và tự dừng trước deep sleep.
 GATT cung cấp:
 
-- Device identity và capability.
-- Mã ghép nối dùng một lần hiển thị trên e-paper.
-- Danh sách Wi-Fi và thông tin mạng được mã hóa theo phiên.
-- URL LAN và token thiết bị sau khi kết nối thành công.
+- Device identity và trạng thái phiên.
+- Lệnh mở Wi-Fi đã lưu, không truyền SSID hoặc mật khẩu.
+- URL LAN và token ngắn hạn sau khi kết nối thành công.
 
 Truyền ảnh/sách lớn qua Wi-Fi hoặc WebDAV, không đẩy qua BLE. Có thể dùng các
 phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, nhưng không
@@ -137,7 +136,8 @@ phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, n
 
 ## Bảo mật
 
-- Token LAN được tạo sau ghép nối và có thể thu hồi trên thiết bị.
+- BLE không bonding; khoảng cách gần là ranh giới tin cậy của BizTransfer v1.
+- Token LAN được tạo mới cho từng phiên và hết hiệu lực khi phiên dừng.
 - Không đưa mật khẩu Wi-Fi, token cloud hoặc thông tin đăng nhập vào log.
 - OTA phải kiểm tra manifest, kích thước và SHA-256 trước khi đổi partition.
 - Không truyền access token Codex/OpenAI xuống thiết bị.
@@ -148,7 +148,7 @@ phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, n
 1. **BizTransfer v1 (đã có):** BLE mở Wi-Fi, token phiên, gửi sách có SHA-256.
 2. **BizSync local:** API thiết bị, Notes, Todo và calendar wallpaper.
 3. **Media:** ảnh, dithering, theme Clock/Weather và wallpaper.
-4. **BLE mở rộng:** quản lý bond, đổi tên thiết bị và chẩn đoán mạng.
+4. **BLE mở rộng:** đổi tên thiết bị, quyền truy cập tùy chọn và chẩn đoán mạng.
 5. **Remote sync:** relay tùy chọn, nhiều thiết bị và thông báo.
 6. **Voice/OTA:** giọng nói trên Android, OTA từ ứng dụng và theo dõi lỗi.
 

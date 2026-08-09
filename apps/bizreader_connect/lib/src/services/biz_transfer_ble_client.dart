@@ -94,21 +94,11 @@ class BizTransferBleClient {
         );
   }
 
-  Future<BizTransferStatus> connectAndStart({
-    required String deviceId,
-    String? ssid,
-    String? password,
-  }) async {
+  Future<BizTransferStatus> connectAndStart({required String deviceId}) async {
     await ensurePermissions();
     await _connect(deviceId);
 
-    final operation = ssid == null || ssid.trim().isEmpty
-        ? <String, dynamic>{'op': 'start'}
-        : <String, dynamic>{
-            'op': 'provision',
-            'ssid': ssid.trim(),
-            'password': password ?? '',
-          };
+    final operation = <String, dynamic>{'op': 'start'};
 
     final requestId = Random.secure().nextInt(0x7fffffff).toRadixString(16);
     operation['request'] = requestId;
@@ -221,7 +211,7 @@ class BizTransferBleClient {
     try {
       await _ble.requestMtu(deviceId: deviceId, mtu: 247);
     } catch (_) {
-      // A smaller MTU still fits normal Wi-Fi credentials via GATT long writes.
+      // Status reads still work through standard GATT long-read behavior.
     }
 
     _commandCharacteristic = QualifiedCharacteristic(
@@ -233,21 +223,6 @@ class BizTransferBleClient {
       serviceId: serviceUuid,
       characteristicId: statusUuid,
       deviceId: deviceId,
-    );
-    // Reading an encrypted characteristic starts Android pairing immediately.
-    final pairingDeadline = DateTime.now().add(const Duration(seconds: 20));
-    Object? pairingError;
-    while (DateTime.now().isBefore(pairingDeadline)) {
-      try {
-        await _readCurrentStatus();
-        return;
-      } catch (error) {
-        pairingError = error;
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-      }
-    }
-    throw BizTransferException(
-      'Không hoàn tất ghép đôi bảo mật: $pairingError',
     );
   }
 

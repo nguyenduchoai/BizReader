@@ -53,37 +53,16 @@ class AppController extends ChangeNotifier {
 
   Stream<BizReaderBleDevice> scanBizReaders() => _bleClient.scan();
 
-  Future<bool> pairDevice(
-    BizReaderBleDevice discovered, {
-    String? ssid,
-    String? password,
-  }) async {
-    connectionState = DeviceConnectionState.checking;
-    connectionMessage = 'Đang kết nối Bluetooth';
+  Future<void> saveBleDevice(BizReaderBleDevice discovered) async {
+    device = DeviceConfig(
+      name: discovered.name,
+      host: '',
+      bleId: discovered.id,
+    );
+    await _preferences.save(device);
+    connectionState = DeviceConnectionState.unknown;
+    connectionMessage = 'Đã lưu BizReader';
     notifyListeners();
-    try {
-      final status = await _bleClient.connectAndStart(
-        deviceId: discovered.id,
-        ssid: ssid,
-        password: password,
-      );
-      device = DeviceConfig(
-        name: status.deviceName.isEmpty ? discovered.name : status.deviceName,
-        host: 'http://${status.ip}:${status.port}',
-        bleId: discovered.id,
-        transferToken: status.token,
-      );
-      await _preferences.save(device);
-      connectionState = DeviceConnectionState.online;
-      connectionMessage = status.message;
-      notifyListeners();
-      return true;
-    } on BizTransferException catch (error) {
-      connectionState = DeviceConnectionState.offline;
-      connectionMessage = error.message;
-      notifyListeners();
-      rethrow;
-    }
   }
 
   Future<DeviceConfig> prepareTransfer() async {
