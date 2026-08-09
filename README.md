@@ -15,7 +15,8 @@ loại bỏ trình đọc sách, WebDAV hoặc Calibre hiện có:
 
 BizTransfer cho phép App lưu thiết bị BLE, yêu cầu thiết bị tự kết nối Wi-Fi đã lưu và
 stream sách vào `/Ebook` trên thẻ SD. Firmware xác minh SHA-256 trước khi hoàn
-tất file; WebDAV truyền thống vẫn là phương án dự phòng.
+tất file. App cũng nhập/đọc EPUB, có dữ liệu demo và đồng bộ vị trí đọc thủ công
+hai chiều; WebDAV truyền thống vẫn là phương án dự phòng.
 
 **Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
 

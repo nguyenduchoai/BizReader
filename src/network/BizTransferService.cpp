@@ -17,6 +17,7 @@
 #include <memory>
 #include <new>
 
+#include "BizReadingProgressStore.h"
 #include "BizBookUploadHandler.h"
 #include "WifiCredentialStore.h"
 
@@ -305,6 +306,8 @@ class BizTransferService::Impl {
     const char* headers[] = {"X-BizReader-Token", "X-Content-SHA256", "Content-Length"};
     httpServer->collectHeaders(headers, 3);
     httpServer->on("/api/bizreader/status", HTTP_GET, [this] { handleHttpStatus(); });
+    httpServer->on("/api/bizreader/progress", HTTP_GET, [this] { handleGetReadingProgress(); });
+    httpServer->on("/api/bizreader/progress", HTTP_POST, [this] { handleSetReadingProgress(); });
     BizBookUploadHandler* uploadHandler = new (std::nothrow) BizBookUploadHandler(owner);
     if (!uploadHandler) {
       httpServer.reset();
@@ -335,6 +338,68 @@ class BizTransferService::Impl {
     char json[STATUS_BUFFER_SIZE];
     buildStatusJson(json, sizeof(json), true);
     httpServer->send(200, "application/json", json);
+  }
+
+  bool authorizeProgressRequest() {
+    if (!owner.authorize(httpServer->header("X-BizReader-Token"))) {
+      httpServer->send(401, "application/json", "{\"error\":\"invalid_token\"}");
+      return false;
+    }
+    touchSession();
+    return true;
+  }
+
+  void handleGetReadingProgress() {
+    if (!authorizeProgressRequest()) return;
+    const String filename = httpServer->arg("filename");
+    if (filename.isEmpty() || filename.length() > 191 || filename.indexOf('/') >= 0) {
+      httpServer->send(400, "application/json", "{\"error\":\"invalid_filename\"}");
+      return;
+    }
+
+    BizReadingProgress progress;
+    if (!BizReadingProgressStore::load(filename.c_str(), progress)) {
+      httpServer->send(404, "application/json", "{\"error\":\"progress_not_found\"}");
+      return;
+    }
+
+    JsonDocument document;
+    document["filename"] = progress.filename;
+    document["percentage"] = progress.percentage;
+    document["spineIndex"] = progress.spineIndex;
+    document["pageNumber"] = progress.pageNumber;
+    document["pageCount"] = progress.pageCount;
+    document["pending"] = progress.pending;
+    String json;
+    serializeJson(document, json);
+    httpServer->send(200, "application/json", json);
+  }
+
+  void handleSetReadingProgress() {
+    if (!authorizeProgressRequest()) return;
+    JsonDocument document;
+    if (deserializeJson(document, httpServer->arg("plain"))) {
+      httpServer->send(400, "application/json", "{\"error\":\"invalid_json\"}");
+      return;
+    }
+
+    const String filename = document["filename"] | "";
+    const float percentage = document["percentage"] | -1.0f;
+    if (filename.isEmpty() || filename.length() > 191 || filename.indexOf('/') >= 0 || percentage < 0.0f ||
+        percentage > 1.0f) {
+      httpServer->send(400, "application/json", "{\"error\":\"invalid_progress\"}");
+      return;
+    }
+
+    BizReadingProgress progress;
+    progress.filename = filename.c_str();
+    progress.percentage = percentage;
+    progress.pending = true;
+    if (!BizReadingProgressStore::save(progress)) {
+      httpServer->send(500, "application/json", "{\"error\":\"save_failed\"}");
+      return;
+    }
+    httpServer->send(200, "application/json", "{\"ok\":true,\"pending\":true}");
   }
 
   void setStatus(TransferState newState, const char* newMessage) {

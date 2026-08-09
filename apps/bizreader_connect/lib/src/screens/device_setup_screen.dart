@@ -157,6 +157,20 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
                   : const Icon(Icons.bluetooth_searching),
               label: Text(_scanning ? 'Dừng tìm kiếm' : 'Tìm BizReader'),
             ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _connecting ? null : widget.controller.enterDemoMode,
+              icon: const Icon(Icons.slideshow_outlined),
+              label: const Text('Xem bản demo'),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Dùng thư viện mẫu để xem giao diện và chụp ảnh, không cần kết nối thiết bị.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Color(0xFF68707B)),
+              ),
+            ),
             if (_message != null) ...[
               const SizedBox(height: 12),
               Text(

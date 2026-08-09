@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -119,6 +120,64 @@ void main() {
       captured.headers['X-Content-SHA256'],
       '75c91b29d5522c8a97c779e50bc33f11e07ed37b2baa31c8c727016e92915c1d',
     );
+    client.close();
+  });
+
+  test('reads device progress by encoded EPUB filename', () async {
+    late http.Request captured;
+    final mock = MockClient((request) async {
+      captured = request;
+      return http.Response.bytes(
+        utf8.encode(
+          '{"filename":"Muôn kiếp nhân sinh.epub","percentage":0.64,'
+          '"spineIndex":4,"pageNumber":12,"pageCount":28,"pending":false}',
+        ),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+    const device = DeviceConfig(
+      name: 'BizReader',
+      host: 'http://192.168.1.25',
+      transferToken: 'session-token',
+    );
+    final client = WebDavDeviceClient(device, client: mock);
+
+    final progress = await client.fetchReadingProgress(
+      'Muôn kiếp nhân sinh.epub',
+    );
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/bizreader/progress');
+    expect(
+      captured.url.queryParameters['filename'],
+      'Muôn kiếp nhân sinh.epub',
+    );
+    expect(captured.headers['X-BizReader-Token'], 'session-token');
+    expect(progress?.percentage, 0.64);
+    expect(progress?.spineIndex, 4);
+    client.close();
+  });
+
+  test('pushes phone progress as authenticated JSON', () async {
+    late http.Request captured;
+    final mock = MockClient((request) async {
+      captured = request;
+      return http.Response('{"ok":true}', 200);
+    });
+    const device = DeviceConfig(
+      name: 'BizReader',
+      host: 'http://192.168.1.25',
+      transferToken: 'session-token',
+    );
+    final client = WebDavDeviceClient(device, client: mock);
+
+    await client.pushReadingProgress(filename: 'book.epub', percentage: 0.42);
+
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/api/bizreader/progress');
+    expect(captured.headers['X-BizReader-Token'], 'session-token');
+    expect(captured.body, '{"filename":"book.epub","percentage":0.42}');
     client.close();
   });
 }

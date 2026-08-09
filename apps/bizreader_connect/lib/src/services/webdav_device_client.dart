@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/device_config.dart';
+import '../models/device_reading_progress.dart';
 
 class DeviceConnectionException implements Exception {
   const DeviceConnectionException(this.message);
@@ -143,6 +145,54 @@ class WebDavDeviceClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DeviceConnectionException(
         'Đồng bộ thất bại (HTTP ${response.statusCode}).',
+      );
+    }
+  }
+
+  Future<DeviceReadingProgress?> fetchReadingProgress(String filename) async {
+    final uri = device.baseUri
+        .resolve('/api/bizreader/progress')
+        .replace(queryParameters: {'filename': filename});
+    final response = await _client
+        .get(uri, headers: {'X-BizReader-Token': device.transferToken})
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw DeviceConnectionException(
+        'Không đọc được tiến độ trên thiết bị (HTTP ${response.statusCode}).',
+      );
+    }
+    try {
+      return DeviceReadingProgress.fromJson(
+        jsonDecode(response.body) as Map<String, Object?>,
+      );
+    } on FormatException {
+      throw const DeviceConnectionException(
+        'Thiết bị trả về dữ liệu tiến độ không hợp lệ.',
+      );
+    }
+  }
+
+  Future<void> pushReadingProgress({
+    required String filename,
+    required double percentage,
+  }) async {
+    final response = await _client
+        .post(
+          device.baseUri.resolve('/api/bizreader/progress'),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-BizReader-Token': device.transferToken,
+          },
+          body: jsonEncode({
+            'filename': filename,
+            'percentage': percentage.clamp(0, 1),
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DeviceConnectionException(
+        'Không gửi được tiến độ sang thiết bị (HTTP ${response.statusCode}).',
       );
     }
   }

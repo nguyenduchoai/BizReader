@@ -6,7 +6,10 @@
 
 - Tìm BizReader bằng BLE và chạm để lưu, không cần mã ghép đôi.
 - Yêu cầu firmware dùng Wi-Fi đã lưu; App không hỏi SSID hoặc mật khẩu.
-- Tự nhận IP/token và mở phiên truyền sách, không cần vào menu **Truyền tệp**.
+- Tự nhận IP/token sau khi người dùng mở **Truyền tệp > Kết nối App** trên máy.
+- Nhập EPUB vào thư viện ứng dụng và đọc trực tiếp trên Android.
+- Lưu vị trí đọc trên điện thoại và đồng bộ thủ công hai chiều theo từng sách.
+- Chế độ demo có thư viện mẫu và nội dung đọc để chụp ảnh Play Store.
 - Chọn và gửi nhiều tệp EPUB, TXT, XTC, XTCH hoặc BMP vào `/Ebook`.
 - Tính SHA-256 trước khi gửi và hiển thị phần trăm truyền.
 - Giữ kết nối WebDAV thủ công làm phương án dự phòng.
@@ -33,6 +36,6 @@ Android cần quyền quét/kết nối Bluetooth.
 
 ## Phạm vi tiếp theo
 
-Notes, Todo, Calendar, Weather, Photos và đồng bộ hai chiều cần API BizSync
-trong firmware. Hợp đồng dữ liệu được mô tả tại
+Notes, Todo, Calendar, Weather và Photos cần API BizSync mở rộng trong firmware.
+Đồng bộ vị trí EPUB đã chạy qua BizTransfer hiện tại. Hợp đồng dữ liệu được mô tả tại
 `../../docs/BIZREADER_PLATFORM.md`.

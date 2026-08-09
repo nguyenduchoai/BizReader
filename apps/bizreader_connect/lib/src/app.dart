@@ -35,6 +35,7 @@ class BizReaderApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: 'Roboto',
         colorScheme: scheme,
         scaffoldBackgroundColor: paper,
         cardTheme: const CardThemeData(
@@ -51,6 +52,7 @@ class BizReaderApp extends StatelessWidget {
           elevation: 0,
           centerTitle: false,
           titleTextStyle: TextStyle(
+            fontFamily: 'Roboto',
             color: ink,
             fontSize: 20,
             fontWeight: FontWeight.w700,

@@ -47,14 +47,37 @@ Giới hạn file là 128 MiB. Chỉ nhận `.epub`, `.txt`, `.xtc`, `.xtch`, `.
 Firmware ghi vào `<filename>.part`, xác minh kích thước và SHA-256, rồi mới đổi
 tên sang file đích. File dở bị xóa khi lỗi, hủy hoặc server dừng.
 
+## Đồng bộ vị trí đọc
+
+Hai endpoint sau dùng cùng token ngắn hạn của phiên BizTransfer:
+
+```http
+GET /api/bizreader/progress?filename=<filename.epub>
+X-BizReader-Token: <token>
+
+POST /api/bizreader/progress
+Content-Type: application/json
+X-BizReader-Token: <token>
+
+{"filename":"book.epub","percentage":0.42}
+```
+
+Firmware lưu tiến độ theo tên tệp trong `/.crosspoint/bizsync/`. Vị trí App gửi
+được đánh dấu chờ và áp dụng khi EPUB tương ứng được mở lần sau. Khi đọc và lưu
+trang trên BizReader, bản ghi được cập nhật lại để App có thể kéo về. Hai trình
+đọc có cách phân trang khác nhau nên phần trăm toàn sách là khóa chuyển đổi; App
+luôn hỏi người dùng chọn vị trí điện thoại hoặc BizReader khi hai bên khác nhau.
+
 ## Trình tự
 
 1. Người dùng mở **Truyền tệp > Kết nối App** để bật BLE.
 2. Người dùng chạm thiết bị để App lưu BLE ID, không cần ghép đôi.
 3. Khi gửi sách, App kết nối BLE và gửi `start`.
 4. Firmware dùng Wi-Fi đã lưu rồi trả IP và token phiên qua BLE.
-5. App tính SHA-256 và stream file bằng HTTP `PUT`.
-6. Firmware xác minh, hoàn tất file và thông báo `complete`.
+5. App tính SHA-256 và stream file bằng HTTP `PUT`, hoặc gọi API tiến độ khi
+   người dùng bấm đồng bộ.
+6. Firmware xác minh, hoàn tất file và thông báo `complete`; tiến độ App gửi
+   được áp dụng ở lần mở EPUB kế tiếp.
 7. Thoát màn hình hoặc sau 5 phút không có phiên truyền, firmware tắt BLE,
    HTTP và Wi-Fi.
 

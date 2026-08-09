@@ -175,17 +175,32 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                         leading: const Icon(Icons.info_outline),
                         title: const Text('Giới thiệu'),
                         subtitle: const Text('BizReader • Hoài Nguyễn'),
-                        trailing: const Text('0.2.2'),
+                        trailing: const Text('0.3.0'),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: _forget,
-                  icon: const Icon(Icons.link_off),
-                  label: const Text('Xóa liên kết thiết bị'),
-                ),
+                if (!widget.controller.demoMode) ...[
+                  OutlinedButton.icon(
+                    onPressed: widget.controller.enterDemoMode,
+                    icon: const Icon(Icons.slideshow_outlined),
+                    label: const Text('Xem bản demo'),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (widget.controller.demoMode)
+                  OutlinedButton.icon(
+                    onPressed: widget.controller.exitDemoMode,
+                    icon: const Icon(Icons.exit_to_app),
+                    label: const Text('Thoát bản demo'),
+                  )
+                else
+                  OutlinedButton.icon(
+                    onPressed: _forget,
+                    icon: const Icon(Icons.link_off),
+                    label: const Text('Xóa liên kết thiết bị'),
+                  ),
               ],
             ),
           ),

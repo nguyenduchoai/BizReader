@@ -38,6 +38,8 @@ BizTransfer v1 đã có trong firmware LilyGo và App Android:
 - Chỉ dùng Wi-Fi đã lưu trên BizReader; App không nhận mật khẩu mạng.
 - Token HTTP ngắn hạn được trả qua BLE khi thiết bị ở gần.
 - HTTP stream vào `/Ebook`, file `.part`, kiểm tra kích thước và SHA-256.
+- App nhập và đọc EPUB cục bộ, có thư viện mẫu để demo/chụp ảnh.
+- Đồng bộ vị trí đọc thủ công hai chiều theo từng EPUB, có bước chọn xung đột.
 - Tự tắt Wi-Fi/server sau 5 phút; WebDAV thủ công vẫn hoạt động độc lập.
 
 Chi tiết byte-level và endpoint: [BizTransfer v1](./BIZTRANSFER_PROTOCOL.md).
@@ -60,7 +62,8 @@ cho các mini-app, còn `BizSyncService` chịu trách nhiệm:
 Flutter dùng một codebase cho Android trước, sau đó có thể mở rộng iOS:
 
 - Thiết bị và trạng thái kết nối.
-- Thư viện và WebDAV.
+- Thư viện EPUB, trình đọc cục bộ và WebDAV.
+- Tiến độ đọc cục bộ và đồng bộ thủ công với BizReader.
 - Trình soạn Notes/Todo/Calendar.
 - Chuẩn hóa ảnh về 960 x 540 và dithering.
 - Cấu hình Clock/Weather/wallpaper.
@@ -77,6 +80,7 @@ chọn cho điều khiển từ xa và nhiều người dùng; firmware không p
 
 ```text
 /Ebook/
+/.crosspoint/bizsync/  # tiến độ đọc EPUB dùng cho App
 /.bizreader/
   device.json
   notes.json
@@ -146,7 +150,8 @@ phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, n
 
 ## Trình tự triển khai
 
-1. **BizTransfer v1 (đã có):** BLE mở Wi-Fi, token phiên, gửi sách có SHA-256.
+1. **BizTransfer v1 (đã có):** BLE mở Wi-Fi, token phiên, gửi sách có SHA-256
+   và đồng bộ thủ công vị trí đọc EPUB.
 2. **BizSync local:** API thiết bị, Notes, Todo và calendar wallpaper.
 3. **Media:** ảnh, dithering, theme Clock/Weather và wallpaper.
 4. **BLE mở rộng:** đổi tên thiết bị, quyền truy cập tùy chọn và chẩn đoán mạng.
@@ -158,6 +163,8 @@ phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, n
 - [reTerminal Sticky docs](https://www.seeedstudio.com/sticky/docs/en/quick-start/)
 - [Sticky hardware overview](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/)
 - [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)
+- [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android)
+- [epub_view for Flutter](https://pub.dev/packages/epub_view)
 - [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk)
 - [Sticky Reminders](https://github.com/Free-Ink/sticky-reminders) (MIT)
 - [OpenDisplay protocol](https://opendisplay.org/protocol/index.html)

@@ -18,6 +18,7 @@
 #include <limits>
 
 #include "BookmarkEntry.h"
+#include "BizReadingProgressStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderBookmarksActivity.h"
@@ -182,9 +183,31 @@ void EpubReaderActivity::onEnter() {
       cachedChapterTotalPageCount = data[4] + (data[5] << 8);
     }
   }
+
+  const std::string progressFilename = BizReadingProgressStore::filenameFromPath(epub->getPath());
+  BizReadingProgress appProgress;
+  bool appProgressApplied = false;
+  if (BizReadingProgressStore::load(progressFilename, appProgress) && appProgress.pending) {
+    const SavedProgressPosition requested{"", appProgress.percentage};
+    const CrossPointPosition mapped = ProgressMapper::toCrossPoint(
+        epub, requested, renderer, currentSpineIndex, cachedChapterTotalPageCount, cachedChapterTotalPageCount);
+    currentSpineIndex = mapped.spineIndex;
+    nextPageNumber = mapped.pageNumber;
+    cachedSpineIndex = mapped.spineIndex;
+    cachedChapterTotalPageCount = mapped.totalPages;
+    EpubReaderUtils::saveProgress(*epub, mapped.spineIndex, mapped.pageNumber, mapped.totalPages);
+    appProgress.spineIndex = mapped.spineIndex;
+    appProgress.pageNumber = mapped.pageNumber;
+    appProgress.pageCount = mapped.totalPages;
+    appProgress.pending = false;
+    BizReadingProgressStore::save(appProgress);
+    appProgressApplied = true;
+    LOG_INF("BIZ", "Applied app reading progress for %s: %.1f%%", progressFilename.c_str(),
+            appProgress.percentage * 100.0f);
+  }
   // We may want a better condition to detect if we are opening for the first time.
   // This will trigger if the book is re-opened at Chapter 0.
-  if (currentSpineIndex == 0) {
+  if (currentSpineIndex == 0 && !appProgressApplied) {
     int textSpineIndex = epub->getSpineIndexForTextReference();
     if (textSpineIndex != 0) {
       currentSpineIndex = textSpineIndex;
@@ -1011,7 +1034,21 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
 }
 
 bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageCount) {
-  return EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount);
+  if (!EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount)) return false;
+
+  const float chapterProgress =
+      pageCount > 1 ? static_cast<float>(currentPage) / static_cast<float>(pageCount - 1) : 0.0f;
+  BizReadingProgress progress;
+  progress.filename = BizReadingProgressStore::filenameFromPath(epub->getPath());
+  progress.percentage = epub->calculateProgress(spineIndex, chapterProgress);
+  progress.spineIndex = spineIndex;
+  progress.pageNumber = currentPage;
+  progress.pageCount = pageCount;
+  progress.pending = false;
+  if (!BizReadingProgressStore::save(progress)) {
+    LOG_ERR("BIZ", "Cannot save app reading progress for %s", progress.filename.c_str());
+  }
+  return true;
 }
 void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int orientedMarginTop,
                                         const int orientedMarginRight, const int orientedMarginBottom,
