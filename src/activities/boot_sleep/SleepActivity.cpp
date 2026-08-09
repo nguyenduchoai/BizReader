@@ -3,6 +3,7 @@
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Txt.h>
@@ -15,6 +16,40 @@
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
+
+namespace {
+uint8_t daysInMonth(const uint16_t year, const uint8_t month) {
+  static constexpr uint8_t days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29;
+  return days[month - 1];
+}
+
+void shiftCalendarDay(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& weekday, const int delta) {
+  if (delta > 0) {
+    weekday = static_cast<uint8_t>((weekday + 1) % 7);
+    if (++day > daysInMonth(year, month)) {
+      day = 1;
+      if (++month > 12) {
+        month = 1;
+        ++year;
+      }
+    }
+  } else if (delta < 0) {
+    weekday = static_cast<uint8_t>((weekday + 6) % 7);
+    if (day > 1) {
+      --day;
+    } else {
+      if (month > 1) {
+        --month;
+      } else {
+        month = 12;
+        --year;
+      }
+      day = daysInMonth(year, month);
+    }
+  }
+}
+}  // namespace
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
@@ -154,9 +189,31 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
 
   renderer.clearScreen();
-  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_SLEEPING));
+
+  char timeText[12] = {};
+  const bool hasClock = halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ,
+                                            SETTINGS.clockFormat == 1);
+  if (hasClock) {
+    renderer.drawCenteredText(NOTOSANS_18_FONT_ID, pageHeight / 2 - 150, timeText, true, EpdFontFamily::BOLD);
+
+    uint16_t year = 0;
+    uint8_t month = 0, day = 0, weekday = 0;
+    uint8_t rawHour = 0, rawMinute = 0;
+    if (halClock.getDate(year, month, day, weekday) && halClock.getTime(rawHour, rawMinute)) {
+      const int localMinutes = rawHour * 60 + rawMinute +
+                               (static_cast<int>(SETTINGS.clockUtcOffsetQ) - 48) * 15;
+      shiftCalendarDay(year, month, day, weekday, localMinutes < 0 ? -1 : (localMinutes >= 1440 ? 1 : 0));
+      char dateText[24];
+      snprintf(dateText, sizeof(dateText), "%02u/%02u/%04u", day, month, year);
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 95, dateText, true, EpdFontFamily::REGULAR);
+    }
+  }
+
+  const int logoY = hasClock ? pageHeight / 2 - 25 : (pageHeight - 120) / 2;
+  renderer.drawImage(Logo120, (pageWidth - 120) / 2, logoY, 120, 120);
+  renderer.drawCenteredText(UI_12_FONT_ID, logoY + 145, "BizReader", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(SMALL_FONT_ID, logoY + 178, "Hoài Nguyễn");
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 48, tr(STR_SLEEPING));
 
   // Make sleep screen dark unless light is selected in settings
   if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {

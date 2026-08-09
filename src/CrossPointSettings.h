@@ -1,5 +1,6 @@
 #pragma once
 #include <HalStorage.h>
+#include <I18nKeys.h>
 
 #include <cstdint>
 #include <iosfwd>
@@ -182,7 +183,7 @@ class CrossPointSettings {
   };
 
   // Sleep screen settings
-  uint8_t sleepScreen = DARK;
+  uint8_t sleepScreen = LIGHT;
   // Sleep screen cover mode settings
   uint8_t sleepScreenCoverMode = FIT;
   // Sleep screen cover filter
@@ -277,8 +278,8 @@ class CrossPointSettings {
   uint8_t imageRendering = IMAGES_DISPLAY;
   // Tilt-based page turning (X3 only — requires QMI8658 IMU)
   uint8_t tiltPageTurn = TILT_OFF;
-  // Language setting (Language enum index, default 0 = EN)
-  uint8_t language = 0;
+  // Language setting (Language enum index; BizReader defaults to Vietnamese)
+  uint8_t language = static_cast<uint8_t>(Language::VI);
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
 

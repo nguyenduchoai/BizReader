@@ -19,7 +19,8 @@ static uint8_t decToBcd(uint8_t dec) { return ((dec / 10) << 4) | (dec % 10); }
 
 void HalClock::begin() {
   if (!gpio.deviceIsX3()) {
-    _available = false;
+    _available = _rtc.begin();
+    LOG_INF("CLK", _available ? "PCF8563 RTC found" : "RTC not found");
     return;
   }
 
@@ -52,6 +53,23 @@ bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
 
   const unsigned long now = millis();
   if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {
+    hour = _cachedHour;
+    minute = _cachedMinute;
+    return true;
+  }
+
+  if (!gpio.deviceIsX3()) {
+    Rtc::DateTime dateTime;
+    if (!_rtc.now(dateTime)) {
+      if (!_hasCachedTime) return false;
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+    _cachedHour = dateTime.hour;
+    _cachedMinute = dateTime.minute;
+    _lastPollMs = now;
+    _hasCachedTime = true;
     hour = _cachedHour;
     minute = _cachedMinute;
     return true;
@@ -97,6 +115,17 @@ bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
 
   hour = _cachedHour;
   minute = _cachedMinute;
+  return true;
+}
+
+bool HalClock::getDate(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& weekday) const {
+  if (!_available || gpio.deviceIsX3()) return false;
+  Rtc::DateTime dateTime;
+  if (!_rtc.now(dateTime)) return false;
+  year = dateTime.year;
+  month = dateTime.month;
+  day = dateTime.day;
+  weekday = dateTime.weekday;
   return true;
 }
 
@@ -167,6 +196,24 @@ bool HalClock::syncFromNTP() {
       time_t now = time(nullptr);
       struct tm timeinfo;
       gmtime_r(&now, &timeinfo);
+
+      if (!gpio.deviceIsX3()) {
+        Rtc::DateTime dateTime;
+        dateTime.year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+        dateTime.month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
+        dateTime.day = static_cast<uint8_t>(timeinfo.tm_mday);
+        dateTime.hour = static_cast<uint8_t>(timeinfo.tm_hour);
+        dateTime.minute = static_cast<uint8_t>(timeinfo.tm_min);
+        dateTime.second = static_cast<uint8_t>(timeinfo.tm_sec);
+        dateTime.weekday = static_cast<uint8_t>(timeinfo.tm_wday);
+        if (_rtc.set(dateTime)) {
+          _lastPollMs = 0;
+          LOG_INF("CLK", "RTC set to %04u-%02u-%02u %02u:%02u:%02u UTC", dateTime.year, dateTime.month,
+                  dateTime.day, dateTime.hour, dateTime.minute, dateTime.second);
+          return true;
+        }
+        return false;
+      }
 
       if (writeTimeToRTC(timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec)) {
         LOG_INF("CLK", "RTC set to %02d:%02d:%02d UTC", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
