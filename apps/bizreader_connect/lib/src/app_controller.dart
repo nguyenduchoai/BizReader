@@ -13,6 +13,7 @@ import 'services/book_library_service.dart';
 import 'services/biz_transfer_ble_client.dart';
 import 'services/content_preferences.dart';
 import 'services/device_preferences.dart';
+import 'services/universal_file_viewer.dart';
 import 'services/webdav_device_client.dart';
 import 'services/weather_service.dart';
 
@@ -24,16 +25,19 @@ class AppController extends ChangeNotifier {
     BizTransferBleClient? bleClient,
     BookLibraryService? bookLibrary,
     ContentPreferences? contentPreferences,
+    FileViewer? fileViewer,
     WeatherService? weatherService,
   }) : _bleClient = bleClient ?? BizTransferBleClient(),
        _bookLibrary = bookLibrary ?? BookLibraryService(),
        _contentPreferences = contentPreferences ?? ContentPreferences(),
+       _fileViewer = fileViewer ?? UniversalFileViewer(),
        _weatherService = weatherService ?? WeatherService();
 
   final DevicePreferences _preferences;
   final BizTransferBleClient _bleClient;
   final BookLibraryService _bookLibrary;
   final ContentPreferences _contentPreferences;
+  final FileViewer _fileViewer;
   final WeatherService _weatherService;
 
   DeviceConfig device = const DeviceConfig(name: 'BizReader', host: '');
@@ -274,6 +278,8 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     return imported;
   }
+
+  Future<void> openDocument(File file) => _fileViewer.open(file);
 
   Future<void> updateBookProgress(
     String bookId, {

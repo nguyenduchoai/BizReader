@@ -18,12 +18,15 @@ stream sách vào `/Ebook` trên thẻ SD. Firmware xác minh SHA-256 trước k
 tất file. App cũng nhập/đọc EPUB, có dữ liệu demo và đồng bộ vị trí đọc thủ công
 hai chiều; WebDAV truyền thống vẫn là phương án dự phòng.
 
-BizReader App 0.4 có các mô-đun ghi chú, việc cần làm, lịch, thời tiết và ảnh
+BizReader App 0.5 có các mô-đun ghi chú, việc cần làm, lịch, thời tiết và ảnh
 nền nghỉ. Nút **Đồng bộ xuống thiết bị** gửi một bản dữ liệu một chiều qua phiên
 BLE/Wi-Fi tạm thời; thiết bị chỉ đọc dữ liệu và không sửa ngược nội dung trên
 điện thoại. Thời tiết có thể lấy tự động theo tên thành phố hoặc nhập tay. Ảnh
 được đổi sang BMP 960 x 540; nền lịch hiển thị giờ, ngày, thời tiết và ba sự kiện
 sắp tới. Trên thiết bị, mở **Tiện ích BizReader** từ trang chủ để xem dữ liệu.
+App cũng tích hợp trình xem ngoại tuyến từ Gander để mở PDF, Office Open XML,
+bảng tính, Markdown, văn bản/mã nguồn, ảnh, âm thanh và video. EPUB tiếp tục đi
+qua thư viện BizReader để giữ luồng đọc và đồng bộ tiến độ hiện có.
 
 **Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
 

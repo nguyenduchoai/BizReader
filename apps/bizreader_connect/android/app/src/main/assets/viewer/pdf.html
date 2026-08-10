@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PDF document</title>
+<!-- Deliberately no viewport meta, unlike the other viewers. Without one the
+     WebView lays out at its default 980 CSS px and loadWithOverviewMode zooms
+     that down to fit, which measured on a Nothing Phone 2 as a 1960 px canvas
+     shown across 1080 device px: sharp at fit-to-width, and a max pinch of
+     about 10x rather than 5x. Adding width=device-width shrinks the canvas to
+     922 px, below native, so it would make pages blurrier, not better. -->
+<link rel="stylesheet" href="app.css">
+<style>
+  body { background: #37474f; }
+  #pages { padding: 8px 0; }
+  .pg {
+    display: block;
+    margin: 0 auto 8px;
+    background: #fff;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.35);
+    max-width: 100%;
+  }
+</style>
+</head>
+<body>
+<div id="vw-status" class="vw-status">Đang hiển thị PDF…</div>
+<div id="pages"></div>
+<script src="app.js"></script>
+<script>
+/*
+ * Classic on purpose, and ahead of the module. What draws a PDF is an ES module,
+ * and a WebView too old to parse one runs none of it: nothing throws, so no
+ * handler inside the module can report that the module never loaded, and the
+ * page waits on "Rendering document…" for ever. So whatever says "your WebView
+ * is too old" cannot itself live in the module.
+ *
+ * Kotlin adds webview=<major>&needs=<floor> only when the WebView package about
+ * to render is older than the vendored pdf.js supports. That is a version read
+ * from the system rather than a timeout or a feature sniff, so the same phone
+ * gets the same answer every time. See PDFJS_MIN_CHROMIUM_MAJOR in
+ * ViewerActivity.kt for where the number comes from.
+ */
+function vwNeedsNewerWebView(have, needs) {
+  vwError(
+    "Android System WebView quá cũ để mở PDF",
+    "BizReader hiển thị PDF bằng Android System WebView trên điện thoại. " +
+    (have && needs
+      ? "Phiên bản hiện tại là " + have + ", trình PDF cần bản " +
+        needs + " trở lên. "
+      : "Phiên bản hiện tại không chạy được trình PDF. ") +
+    "Hãy cập nhật Android System WebView rồi mở lại tệp. " +
+    "Các định dạng khác của BizReader vẫn hoạt động."
+  );
+}
+
+/* Global on purpose: the module below reads it, and it has to be set by a
+   script that is guaranteed to have parsed. */
+var vwPdfBlocked = !!vwParams.get("webview");
+if (vwPdfBlocked) {
+  vwNeedsNewerWebView(vwParams.get("webview"), vwParams.get("needs"));
+}
+</script>
+<script nomodule>
+/*
+ * Runs only where ES modules are not supported at all, which is Chromium below
+ * 61, far under the pdf.js floor, and where the module below is never fetched.
+ * Only reachable when Kotlin could not read the WebView version, because when it
+ * can, the check above has already said the same thing with the numbers filled
+ * in. Six lines of belt and braces that any module-capable engine skips.
+ */
+if (!vwPdfBlocked) vwNeedsNewerWebView(null, null);
+</script>
+<script type="module">
+import * as pdfjsLib from "./lib/pdf.min.mjs";
+
+/* The worker keeps parsing off the UI thread; without it pdf.js falls back to
+   doing everything inline and large documents visibly stall. */
+pdfjsLib.GlobalWorkerOptions.workerSrc = "./lib/pdf.worker.min.mjs";
+
+var pages = document.getElementById("pages");
+
+/* Render at the screen's pixel density so text stays sharp, but cap it: a
+   200-page document at 3x on a dense screen is a lot of bitmap for no gain. */
+var DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function renderPage(doc, n, canvas) {
+  return doc.getPage(n).then(function (page) {
+    var unscaled = page.getViewport({ scale: 1 });
+    var scale = (pages.clientWidth || window.innerWidth) / unscaled.width;
+    var viewport = page.getViewport({ scale: scale * DPR });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.width = "100%";
+    return page.render({
+      canvasContext: canvas.getContext("2d"),
+      viewport: viewport
+    }).promise;
+  });
+}
+
+/*
+ * Two ways in. Small documents are read whole, which is a single request. Large
+ * ones are range-requested so pdf.js pulls only what it is about to draw instead
+ * of holding the entire file in memory for as long as it is open.
+ *
+ * Which one is used is decided on the Kotlin side and passed in, so the headers
+ * being served and the loader chosen here cannot drift apart.
+ */
+function vwOpenDoc() {
+  return vwParams.get("ranged") !== "1"
+    ? vwFetchDoc("buffer").then(function (buf) {
+        return pdfjsLib.getDocument({ data: buf }).promise;
+      })
+    : pdfjsLib.getDocument({
+        url: vwDocUrl(),
+        rangeChunkSize: 65536,
+        // Both of these are needed, and they are not the same switch.
+        // disableAutoFetch stops pdf.js pulling chunks nothing has asked for.
+        // disableStream stops the full-file request it opens first to find out
+        // whether ranges are available at all. Leave that second one out and the
+        // discovery request runs to completion, so the whole document is read
+        // regardless and the range requests on top of it are pure extra work.
+        // Measured against a 20 MB file: the full request delivered 100% of the
+        // bytes without it, and under 5% before pdf.js hung up with it.
+        disableAutoFetch: true,
+        disableStream: true
+      }).promise;
+}
+
+/* Skipped entirely below the pdf.js floor. The card is already on screen from the
+   classic guard above, so reading the document would only end in vwStatusDone
+   hiding the very element that card lives in. A function rather than a bare
+   promise so nothing is fetched just by evaluating this. */
+if (!vwPdfBlocked) {
+  vwOpenDoc()
+    .then(function (doc) {
+      /* One placeholder per page up front so the scrollbar is honest, then fill
+         them in as they come into view. Rendering all of them eagerly would
+         block the first page behind every other one. */
+      var canvases = [];
+      for (var i = 1; i <= doc.numPages; i++) {
+        var c = document.createElement("canvas");
+        c.className = "pg";
+        c.dataset.page = i;
+        pages.appendChild(c);
+        canvases.push(c);
+      }
+
+      return renderPage(doc, 1, canvases[0]).then(function () {
+        vwStatusDone();
+
+        if (doc.numPages < 2) return;
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (!e.isIntersecting) return;
+            var c = e.target;
+            // Unobserving before rendering is what keeps each page drawn once; the
+            // observer reports a given target at most once per batch, so dropping it
+            // here means no later batch can ask for it again.
+            io.unobserve(c);
+            renderPage(doc, Number(c.dataset.page), c)
+              .catch(function () { /* leave the page blank */ });
+          });
+        }, { rootMargin: "200% 0px" });
+        canvases.slice(1).forEach(function (c) { io.observe(c); });
+      });
+    })
+    .catch(function (e) { vwError("Không thể hiển thị PDF", String(e)); });
+}
+</script>
+</body>
+</html>

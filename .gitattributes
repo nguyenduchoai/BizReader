@@ -1,0 +1,3 @@
+# Keep upstream viewer distributions byte-for-byte; several retain CRLF or
+# trailing spaces from their published artifacts.
+apps/bizreader_connect/android/app/src/main/assets/viewer/** -whitespace

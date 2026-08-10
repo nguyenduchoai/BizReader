@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  body { background: #ffffff; }
+  pre {
+    margin: 0;
+    padding: 14px;
+    font: 13px/1.5 "Roboto Mono", Menlo, monospace;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: #212121;
+  }
+  .more {
+    margin: 0;
+    padding: 4px 14px 24px;
+    text-align: center;
+  }
+  .more p {
+    margin: 0 0 10px;
+    font: 13px/1.5 Roboto, -apple-system, "Segoe UI", sans-serif;
+    color: #616161;
+  }
+  .more button {
+    padding: 10px 20px;
+    border: 1px solid #1565c0;
+    border-radius: 8px;
+    background: transparent;
+    color: #1565c0;
+    font: 500 15px Roboto, -apple-system, "Segoe UI", sans-serif;
+  }
+  .more button:active { background: #e3f2fd; }
+  .more button[disabled] { opacity: 0.5; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #121212; }
+    pre { color: #e0e0e0; }
+    .vw-status { background: #1e1e1e; color: #cccccc; }
+    .more p { color: #9e9e9e; }
+    .more button { border-color: #64b5f6; color: #64b5f6; }
+    .more button:active { background: #1e2a35; }
+  }
+</style>
+</head>
+<body>
+<div id="vw-status" class="vw-status">Đang mở…</div>
+<pre id="content"></pre>
+<div class="more" id="more" hidden>
+  <p id="moreNote" aria-live="polite"></p>
+  <button type="button" id="moreBtn">Xem thêm</button>
+</div>
+<script src="app.js"></script>
+<script>
+var content = document.getElementById("content");
+var more = document.getElementById("more");
+var moreNote = document.getElementById("moreNote");
+var moreBtn = document.getElementById("moreBtn");
+var doc = null;
+var shown = 0;
+
+/* Append rather than reassign textContent: the whole document would otherwise
+   be reserialised on every page. */
+function showPage() {
+  moreBtn.disabled = true;
+  return doc.next().then(function (page) {
+    content.appendChild(document.createTextNode(page.text));
+    shown += page.bytes;
+    if (page.done) {
+      more.hidden = true;
+    } else {
+      moreNote.textContent = "Đang hiển thị " + vwFormatSize(shown) + " đầu tiên của tệp.";
+      more.hidden = false;
+      moreBtn.disabled = false;
+    }
+  });
+}
+
+moreBtn.addEventListener("click", function () {
+  showPage().catch(function (e) { vwError("Không thể đọc phần còn lại của tệp", String(e)); });
+});
+
+vwOpenText()
+  .then(function (d) {
+    doc = d;
+    return showPage();
+  })
+  .then(vwStatusDone)
+  .catch(function (e) { vwError("Không thể đọc tệp này", String(e)); });
+</script>
+</body>
+</html>

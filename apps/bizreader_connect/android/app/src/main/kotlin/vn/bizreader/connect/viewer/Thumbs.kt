@@ -1,0 +1,174 @@
+// Derived from Gander (MIT), copyright (c) 2026 Arjun Maniyani.
+package vn.bizreader.connect.viewer
+
+import android.content.ContentResolver
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.pdf.PdfRenderer
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.util.LruCache
+import android.view.View
+import android.widget.ImageView
+import androidx.exifinterface.media.ExifInterface
+import java.io.File
+import java.security.MessageDigest
+import java.util.concurrent.Executors
+
+/**
+ * Small preview thumbnails for images, videos and PDFs.
+ * Memory LRU + PNG disk cache under cacheDir/thumbs, generated off the
+ * main thread. Kinds without a cheap visual preview simply keep their badge.
+ */
+object Thumbs {
+
+    private const val SIZE = 192
+
+    private val mem = LruCache<String, Bitmap>(48)
+    private val executor = Executors.newFixedThreadPool(2)
+    private val main = Handler(Looper.getMainLooper())
+
+    fun supported(kind: FileKind, ext: String): Boolean = when (kind) {
+        FileKind.IMAGE, FileKind.IMAGE_WEB, FileKind.PDF -> true
+        FileKind.PLAYER -> !FileKind.isAudioExt(ext)
+        else -> false
+    }
+
+    /** Shows the thumbnail in [into] and hides [badge] once ready. */
+    fun load(context: Context, uri: Uri, ext: String, into: ImageView, badge: View) {
+        val key = md5(uri.toString())
+        into.tag = key
+        mem.get(key)?.let {
+            into.setImageBitmap(it)
+            into.visibility = View.VISIBLE
+            badge.visibility = View.GONE
+            return
+        }
+        val appCtx = context.applicationContext
+        val kind = FileKind.detect(ext, null)
+        executor.execute {
+            val bmp = fromDisk(appCtx, key)
+                ?: generate(appCtx, uri, kind, ext)?.also { toDisk(appCtx, key, it) }
+                ?: return@execute
+            mem.put(key, bmp)
+            main.post {
+                if (into.tag == key) {
+                    into.setImageBitmap(bmp)
+                    into.visibility = View.VISIBLE
+                    badge.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    fun evict(context: Context, uriString: String) {
+        val key = md5(uriString)
+        mem.remove(key)
+        diskFile(context, key).delete()
+    }
+
+    fun exifRotation(resolver: ContentResolver, uri: Uri): Int = runCatching {
+        resolver.openInputStream(uri)?.use { stream ->
+            when (ExifInterface(stream).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+            )) {
+                ExifInterface.ORIENTATION_ROTATE_90,
+                ExifInterface.ORIENTATION_TRANSPOSE -> 90
+                ExifInterface.ORIENTATION_ROTATE_180,
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180
+                ExifInterface.ORIENTATION_ROTATE_270,
+                ExifInterface.ORIENTATION_TRANSVERSE -> 270
+                else -> 0
+            }
+        } ?: 0
+    }.getOrDefault(0)
+
+    private fun generate(ctx: Context, uri: Uri, kind: FileKind, ext: String): Bitmap? =
+        runCatching {
+            when {
+                kind == FileKind.PDF -> pdfThumb(ctx, uri)
+                kind == FileKind.PLAYER -> videoThumb(ctx, uri)
+                else -> imageThumb(ctx, uri)
+            }
+        }.getOrNull()
+
+    private fun imageThumb(ctx: Context, uri: Uri): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        ctx.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= SIZE) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bmp = ctx.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: return null
+        val rotation = exifRotation(ctx.contentResolver, uri)
+        if (rotation == 0) return bmp
+        val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+        return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+    }
+
+    private fun videoThumb(ctx: Context, uri: Uri): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(ctx, uri)
+            val frame = retriever.frameAtTime ?: return null
+            val scale = SIZE.toFloat() / maxOf(frame.width, frame.height)
+            if (scale >= 1f) frame
+            else Bitmap.createScaledBitmap(
+                frame, (frame.width * scale).toInt(), (frame.height * scale).toInt(), true
+            )
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun pdfThumb(ctx: Context, uri: Uri): Bitmap? {
+        val pfd = ctx.contentResolver.openFileDescriptor(uri, "r") ?: return null
+        pfd.use {
+            PdfRenderer(it).use { renderer ->
+                if (renderer.pageCount == 0) return null
+                renderer.openPage(0).use { page ->
+                    val height = (SIZE.toFloat() * page.height / page.width).toInt()
+                        .coerceIn(1, SIZE * 2)
+                    val bmp = Bitmap.createBitmap(SIZE, height, Bitmap.Config.ARGB_8888)
+                    Canvas(bmp).drawColor(Color.WHITE)
+                    page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    return bmp
+                }
+            }
+        }
+    }
+
+    private fun diskDir(ctx: Context): File =
+        File(ctx.cacheDir, "thumbs").apply { mkdirs() }
+
+    private fun diskFile(ctx: Context, key: String): File =
+        File(diskDir(ctx), "$key.png")
+
+    private fun fromDisk(ctx: Context, key: String): Bitmap? {
+        val f = diskFile(ctx, key)
+        if (!f.exists()) return null
+        return runCatching { BitmapFactory.decodeFile(f.absolutePath) }.getOrNull()
+    }
+
+    private fun toDisk(ctx: Context, key: String, bmp: Bitmap) {
+        runCatching {
+            diskFile(ctx, key).outputStream().use {
+                bmp.compress(Bitmap.CompressFormat.PNG, 90, it)
+            }
+        }
+    }
+
+    private fun md5(s: String): String =
+        MessageDigest.getInstance("MD5").digest(s.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+}

@@ -85,6 +85,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Ứng dụng thiết bị'), findsOneWidget);
+    expect(find.text('Tệp đa định dạng'), findsOneWidget);
     expect(find.text('Hoài Nguyễn'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

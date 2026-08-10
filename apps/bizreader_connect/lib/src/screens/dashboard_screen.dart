@@ -1,7 +1,13 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../services/book_library_service.dart';
+import '../services/universal_file_viewer.dart';
 import 'content_hub_screen.dart';
+import 'reader_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({
@@ -115,6 +121,13 @@ class DashboardScreen extends StatelessWidget {
                           tint: const Color(0xFFF6ECEC),
                           onTap: () => _openContent(context, 4),
                         ),
+                        _AppTile(
+                          icon: Icons.folder_open_outlined,
+                          title: 'Tệp đa định dạng',
+                          value: 'PDF · Office · media',
+                          tint: const Color(0xFFEEF0F3),
+                          onTap: () => _pickAndOpenFile(context),
+                        ),
                       ],
                     );
                   },
@@ -134,6 +147,42 @@ class DashboardScreen extends StatelessWidget {
               ContentHubScreen(controller: controller, initialTab: tab),
         ),
       );
+
+  Future<void> _pickAndOpenFile(BuildContext context) async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.any,
+    );
+    if (result == null || result.files.single.path == null) return;
+
+    final selected = result.files.single;
+    final file = File(selected.path!);
+    final extension = (selected.extension ?? selected.name.split('.').last)
+        .toLowerCase();
+    try {
+      if (extension == 'epub') {
+        final book = await controller.importBook(file, selected.name);
+        if (!context.mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderScreen(controller: controller, book: book),
+          ),
+        );
+      } else {
+        await controller.openDocument(file);
+      }
+    } on BookImportException catch (error) {
+      if (context.mounted) _showMessage(context, error.message);
+    } on UniversalFileViewerException catch (error) {
+      if (context.mounted) _showMessage(context, error.message);
+    }
+  }
+
+  void _showMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
 }
 
 class _ConnectionLabel extends StatelessWidget {

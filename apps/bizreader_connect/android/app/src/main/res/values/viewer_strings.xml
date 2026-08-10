@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="back">Quay lại</string>
+    <string name="search_in_document">Tìm trong tài liệu</string>
+    <string name="share_file">Chia sẻ tệp</string>
+    <string name="show_in_file_manager">Hiện trong trình quản lý tệp</string>
+    <string name="no_file_manager">Không tìm thấy trình quản lý tệp.</string>
+    <string name="share_failed">Không thể chia sẻ tệp này.</string>
+    <string name="previous_match">Kết quả trước</string>
+    <string name="next_match">Kết quả tiếp theo</string>
+    <string name="close_search">Đóng tìm kiếm</string>
+    <string name="match_count">%1$d/%2$d</string>
+    <string name="match_count_spoken">Kết quả %1$d trên %2$d</string>
+    <string name="no_matches">Không có kết quả</string>
+</resources>

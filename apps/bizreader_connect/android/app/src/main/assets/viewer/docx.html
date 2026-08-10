@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Word document</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .docx-wrapper { background: #eceff1 !important; padding: 16px 8px !important; }
+  .docx-wrapper > section.docx { box-shadow: 0 1px 6px rgba(0,0,0,0.25) !important; margin-bottom: 16px !important; }
+</style>
+<script src="lib/jszip3.min.js"></script>
+<script src="lib/docx-preview.min.js"></script>
+</head>
+<body>
+<div id="vw-status" class="vw-status">Đang hiển thị tài liệu…</div>
+<div id="container"></div>
+<script src="app.js"></script>
+<script>
+/* Word bullet lists use Symbol/Wingdings private-use characters (U+F000 range)
+   that Android has no glyphs for. Swap them for Unicode equivalents. */
+function fixSymbolChars(root) {
+  var map = {
+    0xF0B7: "•", 0xF0A7: "▪", 0xF0A8: "◦", 0xF076: "❖",
+    0xF0D8: "➢", 0xF0FC: "✓", 0xF0B0: "°", 0xF0D0: "➔"
+  };
+  var pua = new RegExp("[\\uF000-\\uF0FF]", "g");
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  var n;
+  while ((n = walker.nextNode())) {
+    pua.lastIndex = 0;
+    if (pua.test(n.nodeValue)) {
+      pua.lastIndex = 0;
+      n.nodeValue = n.nodeValue.replace(pua, function (c) {
+        return map[c.charCodeAt(0)] || "•";
+      });
+    }
+  }
+}
+
+vwFetchDoc("buffer")
+  .then(function (buf) {
+    return docx.renderAsync(buf, document.getElementById("container"), null, {
+      inWrapper: true,
+      breakPages: true,
+      renderHeadersFooters: true,
+      ignoreLastRenderedPageBreak: true,
+      experimental: true
+    });
+  })
+  .then(function () {
+    fixSymbolChars(document.getElementById("container"));
+    vwStatusDone();
+  })
+  .catch(function (e) { vwError("Không thể hiển thị tài liệu Word", String(e)); });
+</script>
+</body>
+</html>

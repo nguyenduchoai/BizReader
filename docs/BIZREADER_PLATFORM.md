@@ -64,11 +64,17 @@ Flutter dùng một codebase cho Android trước, sau đó có thể mở rộn
 - Thiết bị và trạng thái kết nối.
 - Thư viện EPUB, trình đọc cục bộ và WebDAV.
 - Tiến độ đọc cục bộ và đồng bộ thủ công với BizReader.
+- Trình xem ngoại tuyến PDF, Office Open XML, bảng tính, Markdown, text/code,
+  ảnh, âm thanh và video, tích hợp từ Gander theo giấy phép MIT.
 - Trình soạn Notes/Todo/Calendar.
 - Chuẩn hóa ảnh về 960 x 540 và dithering.
 - Cấu hình Clock/Weather/wallpaper.
 - Giọng nói trên điện thoại.
 - OTA và chẩn đoán.
+
+Trình xem đa định dạng chỉ chạy trong App Android. Nó không thay đổi các định
+dạng mà firmware e-paper đọc trực tiếp; EPUB vẫn đi qua thư viện và luồng đồng
+bộ tiến độ BizReader hiện có.
 
 ### Đồng bộ
 
@@ -164,6 +170,7 @@ phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, n
 - [Sticky hardware overview](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/)
 - [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)
 - [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android)
+- [Gander](https://github.com/mokshablr/gander) (MIT)
 - [epub_view for Flutter](https://pub.dev/packages/epub_view)
 - [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk)
 - [Sticky Reminders](https://github.com/Free-Ink/sticky-reminders) (MIT)
