@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bizreader_connect/src/models/device_config.dart';
+import 'package:bizreader_connect/src/models/biz_content.dart';
 import 'package:bizreader_connect/src/services/webdav_device_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -178,6 +179,37 @@ void main() {
     expect(captured.url.path, '/api/bizreader/progress');
     expect(captured.headers['X-BizReader-Token'], 'session-token');
     expect(captured.body, '{"filename":"book.epub","percentage":0.42}');
+    client.close();
+  });
+
+  test('pushes app content as authenticated one-way JSON', () async {
+    late http.Request captured;
+    final mock = MockClient((request) async {
+      captured = request;
+      return http.Response('{"ok":true}', 200);
+    });
+    const device = DeviceConfig(
+      name: 'BizReader',
+      host: 'http://192.168.1.25',
+      transferToken: 'session-token',
+    );
+    final client = WebDavDeviceClient(device, client: mock);
+
+    await client.pushContent(
+      const BizContent(
+        notes: [
+          BizNote(id: 'n1', title: 'Ghi chú', body: 'Nội dung', updatedAt: 1),
+        ],
+        sleepMode: BizSleepMode.calendar,
+      ),
+    );
+
+    final body = jsonDecode(captured.body) as Map<String, dynamic>;
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/api/bizreader/content');
+    expect(captured.headers['X-BizReader-Token'], 'session-token');
+    expect(body['version'], 1);
+    expect((body['sleep'] as Map)['mode'], 'calendar');
     client.close();
   });
 }

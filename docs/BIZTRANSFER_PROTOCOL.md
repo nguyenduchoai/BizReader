@@ -68,6 +68,18 @@ trang trên BizReader, bản ghi được cập nhật lại để App có thể
 đọc có cách phân trang khác nhau nên phần trăm toàn sách là khóa chuyển đổi; App
 luôn hỏi người dùng chọn vị trí điện thoại hoặc BizReader khi hai bên khác nhau.
 
+## Đồng bộ tiện ích một chiều
+
+App gửi một bản JSON giới hạn kích thước bằng `POST /api/bizreader/content`, dùng
+cùng `X-BizReader-Token` của phiên BizTransfer. Firmware kiểm tra cấu trúc rồi
+ghi nguyên tử vào `/.crosspoint/bizsync/content.json`. Ghi chú, việc cần làm,
+lịch và thời tiết là dữ liệu chỉ đọc trên thiết bị.
+
+Chế độ nền nghỉ nằm tại `sleep.mode` (`calendar` hoặc `photo`). Với chế độ ảnh,
+App đổi ảnh sang BMP 960 x 540 và tải lên `PUT /sleep.bmp` kèm kích thước,
+SHA-256 và token trước khi chốt bản JSON. Chế độ lịch dùng RTC, thời tiết và tối
+đa ba sự kiện trong bản đồng bộ.
+
 ## Trình tự
 
 1. Người dùng mở **Truyền tệp > Kết nối App** để bật BLE.

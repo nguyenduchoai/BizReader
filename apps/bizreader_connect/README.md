@@ -14,6 +14,10 @@
 - Tính SHA-256 trước khi gửi và hiển thị phần trăm truyền.
 - Giữ kết nối WebDAV thủ công làm phương án dự phòng.
 - Hiển thị khung quản lý mini-app và màn hình nghỉ có lịch.
+- Tạo/sửa/xóa ghi chú, việc cần làm và sự kiện lịch trên App.
+- Cập nhật thời tiết tự động theo tên thành phố hoặc nhập tay.
+- Chọn ảnh điện thoại, đổi sang BMP 960 x 540 và dùng làm nền nghỉ.
+- Đồng bộ toàn bộ tiện ích một chiều xuống **Tiện ích BizReader** trên thiết bị.
 
 ## Chạy và build
 
@@ -34,8 +38,6 @@ BizReader** trong App và chạm thiết bị để lưu. Khi gửi sách, mở 
 **Kết nối App**; App yêu cầu thiết bị dùng Wi-Fi đã lưu và mở phiên truyền.
 Android cần quyền quét/kết nối Bluetooth.
 
-## Phạm vi tiếp theo
-
-Notes, Todo, Calendar, Weather và Photos cần API BizSync mở rộng trong firmware.
-Đồng bộ vị trí EPUB đã chạy qua BizTransfer hiện tại. Hợp đồng dữ liệu được mô tả tại
-`../../docs/BIZREADER_PLATFORM.md`.
+Nội dung tiện ích được sửa trên App và chỉ đọc trên thiết bị. Đồng bộ vị trí EPUB
+vẫn là luồng riêng theo từng sách. Hợp đồng dữ liệu được mô tả tại
+`../../docs/BIZTRANSFER_PROTOCOL.md`.

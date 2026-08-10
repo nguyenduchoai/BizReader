@@ -18,6 +18,7 @@ class BizBookUploadHandler final : public RequestHandler {
 
  private:
   static constexpr size_t MAX_BOOK_SIZE = 128UL * 1024UL * 1024UL;
+  static constexpr size_t MAX_WALLPAPER_SIZE = 8UL * 1024UL * 1024UL;
 
   BizTransferService& transferService;
   HalFile uploadFile;

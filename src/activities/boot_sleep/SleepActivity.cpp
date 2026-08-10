@@ -9,6 +9,7 @@
 #include <Txt.h>
 #include <Xtc.h>
 
+#include "BizContentStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "activities/reader/ReaderUtils.h"
@@ -72,6 +73,12 @@ void SleepActivity::onEnter() {
     GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
   }
 
+  BizContentData syncedContent;
+  if (BizContentStore::load(syncedContent)) {
+    if (syncedContent.sleepMode == "photo") return renderCustomSleepScreen();
+    return renderBizCalendarSleepScreen(syncedContent);
+  }
+
   switch (SETTINGS.sleepScreen) {
     case (CrossPointSettings::SLEEP_SCREEN_MODE::BLANK):
       return renderBlankSleepScreen();
@@ -88,6 +95,54 @@ void SleepActivity::onEnter() {
     default:
       return renderDefaultSleepScreen();
   }
+}
+
+void SleepActivity::renderBizCalendarSleepScreen(const BizContentData& content) const {
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  renderer.clearScreen();
+
+  uint16_t year = 0;
+  uint8_t month = 0, day = 0, weekday = 0;
+  uint8_t rawHour = 0, rawMinute = 0;
+  char timeText[12] = {};
+  const bool hasClock =
+      halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1);
+  if (hasClock) renderer.drawCenteredText(NOTOSANS_18_FONT_ID, 62, timeText, true, EpdFontFamily::BOLD);
+
+  if (halClock.getDate(year, month, day, weekday) && halClock.getTime(rawHour, rawMinute)) {
+    const int localMinutes = rawHour * 60 + rawMinute + (static_cast<int>(SETTINGS.clockUtcOffsetQ) - 48) * 15;
+    shiftCalendarDay(year, month, day, weekday, localMinutes < 0 ? -1 : (localMinutes >= 1440 ? 1 : 0));
+    char dayText[8];
+    snprintf(dayText, sizeof(dayText), "%02u", day);
+    renderer.drawCenteredText(NOTOSANS_18_FONT_ID, 160, dayText, true, EpdFontFamily::BOLD);
+    char dateText[32];
+    snprintf(dateText, sizeof(dateText), "Tháng %u, %u", month, year);
+    renderer.drawCenteredText(UI_12_FONT_ID, 235, dateText, true, EpdFontFamily::BOLD);
+  }
+
+  char weatherText[160];
+  snprintf(weatherText, sizeof(weatherText), "%s  %d°C  %s", content.weather.location.c_str(),
+           content.weather.temperature, content.weather.condition.c_str());
+  renderer.drawCenteredText(UI_10_FONT_ID, 295, weatherText);
+  renderer.drawLine(90, 340, pageWidth - 90, 340, true);
+
+  int y = 365;
+  const int maxEvents = std::min(3, static_cast<int>(content.events.size()));
+  if (maxEvents == 0) {
+    renderer.drawCenteredText(UI_10_FONT_ID, y + 15, "Không có lịch sắp tới");
+  } else {
+    for (int i = 0; i < maxEvents; ++i) {
+      const auto& event = content.events[i];
+      const std::string prefix = event.date + (event.time.empty() ? "" : " " + event.time);
+      renderer.drawText(SMALL_FONT_ID, 70, y, prefix.c_str(), true, EpdFontFamily::BOLD);
+      const auto lines = renderer.wrappedText(UI_10_FONT_ID, event.title.c_str(), pageWidth - 140, 1);
+      if (!lines.empty()) renderer.drawText(UI_10_FONT_ID, 70, y + 22, lines[0].c_str());
+      y += 58;
+    }
+  }
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 35, "BizReader · Hoài Nguyễn");
+  renderer.displayBuffer(HalDisplay::FULL_REFRESH);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
@@ -191,8 +246,8 @@ void SleepActivity::renderDefaultSleepScreen() const {
   renderer.clearScreen();
 
   char timeText[12] = {};
-  const bool hasClock = halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ,
-                                            SETTINGS.clockFormat == 1);
+  const bool hasClock =
+      halClock.formatTime(timeText, sizeof(timeText), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1);
   if (hasClock) {
     renderer.drawCenteredText(NOTOSANS_18_FONT_ID, pageHeight / 2 - 150, timeText, true, EpdFontFamily::BOLD);
 
@@ -200,8 +255,7 @@ void SleepActivity::renderDefaultSleepScreen() const {
     uint8_t month = 0, day = 0, weekday = 0;
     uint8_t rawHour = 0, rawMinute = 0;
     if (halClock.getDate(year, month, day, weekday) && halClock.getTime(rawHour, rawMinute)) {
-      const int localMinutes = rawHour * 60 + rawMinute +
-                               (static_cast<int>(SETTINGS.clockUtcOffsetQ) - 48) * 15;
+      const int localMinutes = rawHour * 60 + rawMinute + (static_cast<int>(SETTINGS.clockUtcOffsetQ) - 48) * 15;
       shiftCalendarDay(year, month, day, weekday, localMinutes < 0 ? -1 : (localMinutes >= 1440 ? 1 : 0));
       char dateText[24];
       snprintf(dateText, sizeof(dateText), "%02u/%02u/%04u", day, month, year);

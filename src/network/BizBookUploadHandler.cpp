@@ -25,11 +25,12 @@ BizBookUploadHandler::~BizBookUploadHandler() { abortUpload(); }
 
 bool BizBookUploadHandler::canHandle(WebServer& server, const HTTPMethod method, const String& uri) {
   (void)server;
-  return (method == HTTP_PUT && uri.startsWith("/Ebook/")) || (method == HTTP_OPTIONS && uri == "/api/bizreader");
+  return (method == HTTP_PUT && (uri.startsWith("/Ebook/") || uri == "/sleep.bmp")) ||
+         (method == HTTP_OPTIONS && uri == "/api/bizreader");
 }
 
 bool BizBookUploadHandler::canRaw(WebServer& server, const String& uri) {
-  return server.method() == HTTP_PUT && uri.startsWith("/Ebook/");
+  return server.method() == HTTP_PUT && (uri.startsWith("/Ebook/") || uri == "/sleep.bmp");
 }
 
 bool BizBookUploadHandler::isAuthorized(WebServer& server) const {
@@ -45,8 +46,9 @@ bool BizBookUploadHandler::isAllowedExtension(const String& path) const {
 
 bool BizBookUploadHandler::preparePath(const String& uri) {
   targetPath = WebServer::urlDecode(uri);
-  if (!targetPath.startsWith("/Ebook/") || targetPath.length() > 480 || targetPath.indexOf("..") >= 0 ||
-      targetPath.indexOf('\\') >= 0 || !isAllowedExtension(targetPath)) {
+  const bool isWallpaper = targetPath == "/sleep.bmp";
+  if ((!targetPath.startsWith("/Ebook/") && !isWallpaper) || targetPath.length() > 480 ||
+      targetPath.indexOf("..") >= 0 || targetPath.indexOf('\\') >= 0 || !isAllowedExtension(targetPath)) {
     responseCode = 400;
     responseMessage = "Invalid book path";
     return false;
@@ -94,19 +96,20 @@ void BizBookUploadHandler::raw(WebServer& server, const String& uri, HTTPRaw& ra
       responseMessage = "Invalid transfer token";
       return;
     }
-    if (expectedSize == 0 || expectedSize > MAX_BOOK_SIZE) {
-      responseCode = 413;
-      responseMessage = "Book is empty or too large";
-      return;
-    }
     if (!expectedSha256.isEmpty() && expectedSha256.length() != 64) {
       responseCode = 400;
       responseMessage = "Invalid SHA-256 header";
       return;
     }
     if (!preparePath(uri)) return;
+    const size_t maxSize = targetPath == "/sleep.bmp" ? MAX_WALLPAPER_SIZE : MAX_BOOK_SIZE;
+    if (expectedSize == 0 || expectedSize > maxSize) {
+      responseCode = 413;
+      responseMessage = targetPath == "/sleep.bmp" ? "Wallpaper is empty or too large" : "Book is empty or too large";
+      return;
+    }
 
-    Storage.mkdir("/Ebook");
+    if (targetPath.startsWith("/Ebook/")) Storage.mkdir("/Ebook");
     Storage.remove(temporaryPath.c_str());
     if (!Storage.openFileForWrite("BIZ", temporaryPath, uploadFile)) {
       responseCode = 507;
@@ -263,7 +266,7 @@ bool BizBookUploadHandler::handle(WebServer& server, const HTTPMethod method, co
     return true;
   }
 
-  if (method != HTTP_PUT || !uri.startsWith("/Ebook/")) return false;
+  if (method != HTTP_PUT || (!uri.startsWith("/Ebook/") && uri != "/sleep.bmp")) return false;
 
   String response = "{\"ok\":";
   response += responseCode >= 200 && responseCode < 300 ? "true" : "false";

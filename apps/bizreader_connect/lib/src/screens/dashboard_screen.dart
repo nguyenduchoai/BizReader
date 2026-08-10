@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import 'content_hub_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({
@@ -84,37 +85,35 @@ class DashboardScreen extends StatelessWidget {
                           title: 'Ghi chú',
                           value: 'Đồng bộ nội dung',
                           tint: const Color(0xFFF2EDF7),
-                          onTap: () => _showNextMilestone(context, 'Ghi chú'),
+                          onTap: () => _openContent(context, 0),
                         ),
                         _AppTile(
                           icon: Icons.checklist,
                           title: 'Việc cần làm',
-                          value: 'Hai chiều',
+                          value: 'Đồng bộ xuống máy',
                           tint: const Color(0xFFF7F0E8),
-                          onTap: () =>
-                              _showNextMilestone(context, 'Việc cần làm'),
+                          onTap: () => _openContent(context, 1),
                         ),
                         _AppTile(
                           icon: Icons.calendar_month_outlined,
                           title: 'Lịch',
                           value: 'Lịch và nhắc việc',
                           tint: const Color(0xFFE8F1F7),
-                          onTap: () => _showNextMilestone(context, 'Lịch'),
+                          onTap: () => _openContent(context, 2),
                         ),
                         _AppTile(
                           icon: Icons.cloud_outlined,
                           title: 'Thời tiết',
                           value: 'Theo vị trí',
                           tint: const Color(0xFFEAF5F5),
-                          onTap: () => _showNextMilestone(context, 'Thời tiết'),
+                          onTap: () => _openContent(context, 3),
                         ),
                         _AppTile(
                           icon: Icons.photo_outlined,
                           title: 'Ảnh và nền nghỉ',
                           value: '960 x 540',
                           tint: const Color(0xFFF6ECEC),
-                          onTap: () =>
-                              _showNextMilestone(context, 'Ảnh và nền nghỉ'),
+                          onTap: () => _openContent(context, 4),
                         ),
                       ],
                     );
@@ -128,40 +127,13 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  void _showNextMilestone(BuildContext context, String feature) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                feature,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Mô-đun này cần API BizSync trong firmware. Hiện ứng dụng đã '
-                'có BLE theo yêu cầu để mở Wi-Fi và gửi sách vào thẻ nhớ; '
-                'BizSync sẽ dùng cùng giao thức LAN cho dữ liệu hai chiều.',
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Đã hiểu'),
-              ),
-            ],
-          ),
+  void _openContent(BuildContext context, int tab) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              ContentHubScreen(controller: controller, initialTab: tab),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _ConnectionLabel extends StatelessWidget {

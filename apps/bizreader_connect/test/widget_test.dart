@@ -88,6 +88,26 @@ void main() {
     expect(find.text('Hoài Nguyễn'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('dashboard opens working notes module', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppController(DevicePreferences());
+    await controller.load();
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(BizReaderApp(controller: controller));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Ghi chú').first);
+    await tester.tap(find.text('Ghi chú').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tiện ích BizReader'), findsOneWidget);
+    expect(find.text('Chưa có ghi chú'), findsOneWidget);
+    await tester.tap(find.byTooltip('Thêm'));
+    await tester.pumpAndSettle();
+    expect(find.text('Thêm ghi chú'), findsOneWidget);
+  });
 }
 
 class _FakeBookLibrary extends BookLibraryService {

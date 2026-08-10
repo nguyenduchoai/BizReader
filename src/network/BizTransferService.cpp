@@ -17,8 +17,9 @@
 #include <memory>
 #include <new>
 
-#include "BizReadingProgressStore.h"
 #include "BizBookUploadHandler.h"
+#include "BizContentStore.h"
+#include "BizReadingProgressStore.h"
 #include "WifiCredentialStore.h"
 
 namespace {
@@ -308,6 +309,7 @@ class BizTransferService::Impl {
     httpServer->on("/api/bizreader/status", HTTP_GET, [this] { handleHttpStatus(); });
     httpServer->on("/api/bizreader/progress", HTTP_GET, [this] { handleGetReadingProgress(); });
     httpServer->on("/api/bizreader/progress", HTTP_POST, [this] { handleSetReadingProgress(); });
+    httpServer->on("/api/bizreader/content", HTTP_POST, [this] { handleSetContent(); });
     BizBookUploadHandler* uploadHandler = new (std::nothrow) BizBookUploadHandler(owner);
     if (!uploadHandler) {
       httpServer.reset();
@@ -400,6 +402,22 @@ class BizTransferService::Impl {
       return;
     }
     httpServer->send(200, "application/json", "{\"ok\":true,\"pending\":true}");
+  }
+
+  void handleSetContent() {
+    if (!authorizeProgressRequest()) return;
+    const String body = httpServer->arg("plain");
+    std::string error;
+    if (!BizContentStore::saveJson(std::string(body.c_str(), body.length()), error)) {
+      const bool storageError = error == "write_failed" || error == "backup_failed" || error == "rename_failed";
+      const int status = error == "content_too_large" ? 413 : (storageError ? 500 : 400);
+      String response = "{\"error\":\"";
+      response += error.c_str();
+      response += "\"}";
+      httpServer->send(status, "application/json", response);
+      return;
+    }
+    httpServer->send(200, "application/json", "{\"ok\":true,\"direction\":\"app_to_device\"}");
   }
 
   void setStatus(TransferState newState, const char* newMessage) {

@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/device_config.dart';
+import '../models/biz_content.dart';
 import '../models/device_reading_progress.dart';
 
 class DeviceConnectionException implements Exception {
@@ -193,6 +194,24 @@ class WebDavDeviceClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DeviceConnectionException(
         'Không gửi được tiến độ sang thiết bị (HTTP ${response.statusCode}).',
+      );
+    }
+  }
+
+  Future<void> pushContent(BizContent content) async {
+    final response = await _client
+        .post(
+          device.baseUri.resolve('/api/bizreader/content'),
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-BizReader-Token': device.transferToken,
+          },
+          body: jsonEncode(content.toJson()),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DeviceConnectionException(
+        'Không gửi được tiện ích sang thiết bị (HTTP ${response.statusCode}).',
       );
     }
   }
