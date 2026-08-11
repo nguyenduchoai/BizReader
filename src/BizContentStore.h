@@ -5,14 +5,23 @@
 #include <vector>
 
 struct BizNoteItem {
+  std::string id;
   std::string title;
   std::string body;
+  uint64_t updatedAt = 0;
 };
 
 struct BizTodoItem {
+  std::string id;
   std::string title;
   std::string due;
   bool done = false;
+  uint64_t updatedAt = 0;
+};
+
+struct BizDeletedItem {
+  std::string id;
+  uint64_t updatedAt = 0;
 };
 
 struct BizCalendarItem {
@@ -33,6 +42,8 @@ struct BizWeatherData {
 struct BizContentData {
   std::vector<BizNoteItem> notes;
   std::vector<BizTodoItem> todos;
+  std::vector<BizDeletedItem> deletedNotes;
+  std::vector<BizDeletedItem> deletedTodos;
   std::vector<BizCalendarItem> events;
   BizWeatherData weather;
   std::string sleepMode = "calendar";
@@ -45,5 +56,7 @@ class BizContentStore {
   static constexpr size_t MAX_JSON_SIZE = 32UL * 1024UL;
 
   static bool saveJson(const std::string& json, std::string& error);
+  static bool loadJson(std::string& json);
   static bool load(BizContentData& data);
+  static bool toggleTodo(const std::string& id);
 };

@@ -59,7 +59,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
         actions: [
           IconButton(
             onPressed: widget.controller.contentSyncing ? null : _sync,
-            tooltip: 'Đồng bộ xuống thiết bị',
+            tooltip: 'Đồng bộ BLE hai chiều',
             icon: widget.controller.contentSyncing
                 ? const SizedBox.square(
                     dimension: 22,
@@ -509,7 +509,7 @@ class _WeatherPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         const Text(
-          'Cập nhật tự động theo tên thành phố hoặc nhập tay, sau đó gửi một chiều xuống BizReader.',
+          'Cập nhật tự động theo tên thành phố hoặc nhập tay, sau đó đồng bộ BLE với BizReader.',
         ),
       ],
     );
@@ -589,6 +589,25 @@ class _SleepPage extends StatelessWidget {
           label: const Text('Chọn ảnh từ máy'),
         ),
         if (imagePath != null) ...[
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: () async {
+              try {
+                await controller.sendWallpaperToDevice();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Đã gửi ảnh nền qua Wi-Fi')),
+                );
+              } on Object catch (error) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(error.toString())));
+              }
+            },
+            icon: const Icon(Icons.wifi_outlined),
+            label: const Text('Gửi ảnh nền qua Wi-Fi'),
+          ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: controller.clearWallpaper,

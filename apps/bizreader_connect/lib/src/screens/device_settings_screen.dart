@@ -175,7 +175,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                         leading: const Icon(Icons.info_outline),
                         title: const Text('Giới thiệu'),
                         subtitle: const Text('BizReader • Hoài Nguyễn'),
-                        trailing: const Text('0.5.0'),
+                        trailing: const Text('0.6.0'),
                       ),
                     ],
                   ),

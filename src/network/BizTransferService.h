@@ -11,6 +11,8 @@ class BizTransferService {
   static constexpr const char* COMMAND_UUID = "7d2f1001-8d4f-4f5b-a8d0-53b495a9b001";
   static constexpr const char* STATUS_UUID = "7d2f1002-8d4f-4f5b-a8d0-53b495a9b001";
   static constexpr const char* INFO_UUID = "7d2f1003-8d4f-4f5b-a8d0-53b495a9b001";
+  static constexpr const char* SYNC_RX_UUID = "7d2f1004-8d4f-4f5b-a8d0-53b495a9b001";
+  static constexpr const char* SYNC_TX_UUID = "7d2f1005-8d4f-4f5b-a8d0-53b495a9b001";
 
   static BizTransferService& getInstance();
 

@@ -2,7 +2,7 @@ import 'package:bizreader_connect/src/models/biz_content.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('content snapshot keeps the one-way device contract bounded', () {
+  test('content snapshot keeps the BLE v2 device contract bounded', () {
     final content = BizContent(
       notes: [
         for (var index = 0; index < 45; index++)
@@ -36,10 +36,38 @@ void main() {
 
     final json = content.toJson();
 
-    expect(json['version'], 1);
+    expect(json['version'], 2);
     expect((json['notes'] as List), hasLength(40));
     expect((json['sleep'] as Map)['mode'], 'photo');
     expect(json, isNot(contains('wallpaperPath')));
+  });
+
+  test('merge keeps newest items and tombstones deleted items', () {
+    final local = BizContent(
+      notes: const [
+        BizNote(id: 'keep', title: 'App', body: 'Mới', updatedAt: 20),
+        BizNote(id: 'gone', title: 'Xóa', body: '', updatedAt: 10),
+      ],
+      todos: const [BizTodo(id: 'task', title: 'Đọc sách', updatedAt: 10)],
+      deletedNotes: const [BizDeletedItem(id: 'gone', updatedAt: 30)],
+      updatedAt: 30,
+    );
+    final remote = BizContent(
+      notes: const [
+        BizNote(id: 'keep', title: 'Máy', body: 'Cũ', updatedAt: 15),
+      ],
+      todos: const [
+        BizTodo(id: 'task', title: 'Đọc sách', done: true, updatedAt: 40),
+      ],
+      updatedAt: 40,
+    );
+
+    final merged = BizContent.merge(local, remote);
+
+    expect(merged.notes.single.title, 'App');
+    expect(merged.notes.where((item) => item.id == 'gone'), isEmpty);
+    expect(merged.todos.single.done, isTrue);
+    expect(merged.updatedAt, 40);
   });
 
   test('restores editable content from local storage JSON', () {

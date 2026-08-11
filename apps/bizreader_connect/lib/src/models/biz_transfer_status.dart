@@ -11,6 +11,8 @@ class BizTransferStatus {
     this.total = 0,
     this.filename = '',
     this.sha256 = '',
+    this.syncChunks = 0,
+    this.syncSize = 0,
   });
 
   factory BizTransferStatus.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,8 @@ class BizTransferStatus {
       total: (json['total'] as num?)?.toInt() ?? 0,
       filename: json['filename'] as String? ?? '',
       sha256: json['sha256'] as String? ?? '',
+      syncChunks: (json['syncChunks'] as num?)?.toInt() ?? 0,
+      syncSize: (json['syncSize'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -40,9 +44,12 @@ class BizTransferStatus {
   final int total;
   final String filename;
   final String sha256;
+  final int syncChunks;
+  final int syncSize;
 
   bool get isReady => state == 'ready' || state == 'complete';
   bool get isError => state == 'error';
+  bool get isSyncReady => state == 'sync_ready';
 }
 
 class BizReaderBleDevice {

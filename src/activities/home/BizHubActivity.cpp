@@ -87,6 +87,11 @@ void BizHubActivity::loop() {
       module = selectorIndex;
       selectorIndex = 0;
       requestUpdate();
+    } else if (module == 1 && count > 0) {
+      if (BizContentStore::toggleTodo(content.todos[selectorIndex].id)) {
+        BizContentStore::load(content);
+        requestUpdate();
+      }
     } else if (count > 0) {
       showingDetail = true;
       requestUpdate();
@@ -180,8 +185,8 @@ void BizHubActivity::render(RenderLock&&) {
         [this](int) { return module == 0 ? Bookmark : (module == 1 ? Recent : Library); });
   }
 
-  const auto labels =
-      mappedInput.mapLabels(tr(STR_BACK), module >= 3 ? "" : tr(STR_OPEN), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const char* actionLabel = module == 1 ? "Đánh dấu" : (module >= 3 ? "" : tr(STR_OPEN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), actionLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   renderer.displayBuffer();
 }

@@ -1,8 +1,12 @@
-# BizTransfer v1
+# BizTransfer và BizSync v2
 
-BizTransfer dùng BLE làm kênh điều khiển và Wi-Fi làm kênh dữ liệu. Giao thức
-chỉ được build cho profile `lilygo`; WebDAV thủ công của CrossPoint vẫn giữ
-nguyên cho các profile khác và làm đường dự phòng.
+Firmware LilyGo dùng hai đường truyền có mục đích riêng:
+
+- **BLE Sync v2**: tiến độ đọc, ghi chú, việc cần làm, lịch, thời tiết và cấu hình nền nghỉ.
+- **Wi-Fi/HTTP**: sách và ảnh BMP lớn; WebDAV vẫn là đường dự phòng.
+
+BLE chỉ bật khi người dùng mở **Truyền tệp > Kết nối App**, không bonding và
+không yêu cầu passkey. Thoát màn hình hoặc hết thời gian chờ sẽ tắt radio.
 
 ## BLE GATT
 
@@ -12,87 +16,86 @@ nguyên cho các profile khác và làm đường dự phòng.
 | Command | `7d2f1001-8d4f-4f5b-a8d0-53b495a9b001` | Write |
 | Status | `7d2f1002-8d4f-4f5b-a8d0-53b495a9b001` | Read/notify |
 | Info | `7d2f1003-8d4f-4f5b-a8d0-53b495a9b001` | Read |
+| Sync RX | `7d2f1004-8d4f-4f5b-a8d0-53b495a9b001` | Write |
+| Sync TX | `7d2f1005-8d4f-4f5b-a8d0-53b495a9b001` | Read |
 
-BLE không bonding và không yêu cầu passkey. Firmware không nhận SSID hoặc mật
-khẩu qua BLE; lệnh `start` chỉ sử dụng mạng Wi-Fi đã lưu sẵn trên BizReader.
+Info trả `protocol: 2`. Command và Status tiếp tục tương thích với BizTransfer
+v1. Mọi lệnh có `request`; firmware phản hồi cùng mã để App không nhận nhầm
+trạng thái cũ.
 
-Lệnh JSON:
+## Đồng bộ BLE
 
-```json
-{"op":"start"}
-{"op":"stop"}
-{"op":"ping"}
+App thực hiện một giao dịch hai pha:
+
+1. Gửi `sync_pull`, đọc snapshot hiện tại của thiết bị qua Sync TX.
+2. Hợp nhất từng mục theo `id` và `updatedAt`; tombstone mới hơn thắng dữ liệu cũ.
+3. Gửi `sync_begin`, ghi các chunk theo thứ tự vào Sync RX, rồi gửi `sync_commit`.
+4. Firmware chỉ ghi snapshot sau khi nhận đủ byte/chunk và trả snapshot đã lưu.
+
+Khung nhị phân có header little-endian 4 byte:
+
+```text
+uint16 sequence | uint16 totalChunks | payload
 ```
 
-App có thể thêm `request` vào lệnh; firmware phản hồi lại cùng mã để App không
-nhận nhầm trạng thái của lệnh trước. Trạng thái JSON có `state`, `message`,
-`request`, `ip`, `port`, `token` và tiến độ `received/total`. Các state v1 là
-`idle`, `connecting`, `ready`, `uploading`, `complete`, `error`.
+Kích thước frame được điều chỉnh theo ATT MTU, tối đa 240 byte. Snapshot tối đa
+48 KiB; riêng content tối đa 32 KiB, 40 ghi chú, 60 task và 100 tiến độ đọc.
 
-## HTTP upload
+Các lệnh:
 
-Khi Wi-Fi kết nối, firmware mở server trong tối đa 5 phút không hoạt động:
+```json
+{"op":"sync_pull","request":"a1","frameSize":240}
+{"op":"sync_begin","request":"a2","size":12345,"chunks":53}
+{"op":"sync_commit","request":"a3"}
+```
+
+Status dùng thêm `sync_receiving` và `sync_ready`; ở trạng thái sẵn sàng có
+`syncChunks` và `syncSize`.
+
+Snapshot:
+
+```json
+{
+  "protocol": 2,
+  "content": {
+    "version": 2,
+    "updatedAt": 1786400000000,
+    "notes": [{"id":"n1","title":"Ý tưởng","body":"...","updatedAt":1786400000000}],
+    "todos": [{"id":"t1","title":"Đọc sách","done":true,"due":"Hôm nay","updatedAt":1786400000100}],
+    "deleted": {"notes":[],"todos":[]},
+    "events": [],
+    "weather": {},
+    "sleep": {"mode":"calendar"}
+  },
+  "progress": [{"filename":"book.epub","percentage":0.42,"spineIndex":2,"updatedAt":1786400000200,"pending":false}]
+}
+```
+
+Tiến độ từ App mới hơn được đặt `pending: true`; firmware áp dụng khi EPUB tương
+ứng được mở. Khi thiết bị lưu trang mới, `updatedAt` tăng và lần sync sau sẽ đưa
+vị trí đó về App.
+
+## Truyền sách và ảnh qua Wi-Fi
+
+Lệnh `start` không nhận SSID/mật khẩu; firmware chỉ dùng Wi-Fi đã lưu trên máy.
+Sau khi kết nối, Status trả IP và token ngắn hạn. App dùng:
 
 ```http
-GET /api/bizreader/status
-X-BizReader-Token: <token>
-
 PUT /Ebook/<filename>.epub
+PUT /sleep.bmp
 Content-Length: <bytes>
 X-Content-SHA256: <64 hex chars>
 X-BizReader-Token: <token>
 ```
 
-Giới hạn file là 128 MiB. Chỉ nhận `.epub`, `.txt`, `.xtc`, `.xtch`, `.bmp`.
-Firmware ghi vào `<filename>.part`, xác minh kích thước và SHA-256, rồi mới đổi
-tên sang file đích. File dở bị xóa khi lỗi, hủy hoặc server dừng.
+Sách được ghi vào `.part`, kiểm tra kích thước và SHA-256 rồi mới đổi tên. File
+tối đa 128 MiB và nhận `.epub`, `.txt`, `.xtc`, `.xtch`, `.bmp`. Các endpoint
+HTTP content/progress v1 vẫn được giữ để tương thích, nhưng App 0.6 dùng BLE cho
+dữ liệu nhỏ.
 
-## Đồng bộ vị trí đọc
+## Ranh giới tin cậy
 
-Hai endpoint sau dùng cùng token ngắn hạn của phiên BizTransfer:
-
-```http
-GET /api/bizreader/progress?filename=<filename.epub>
-X-BizReader-Token: <token>
-
-POST /api/bizreader/progress
-Content-Type: application/json
-X-BizReader-Token: <token>
-
-{"filename":"book.epub","percentage":0.42}
-```
-
-Firmware lưu tiến độ theo tên tệp trong `/.crosspoint/bizsync/`. Vị trí App gửi
-được đánh dấu chờ và áp dụng khi EPUB tương ứng được mở lần sau. Khi đọc và lưu
-trang trên BizReader, bản ghi được cập nhật lại để App có thể kéo về. Hai trình
-đọc có cách phân trang khác nhau nên phần trăm toàn sách là khóa chuyển đổi; App
-luôn hỏi người dùng chọn vị trí điện thoại hoặc BizReader khi hai bên khác nhau.
-
-## Đồng bộ tiện ích một chiều
-
-App gửi một bản JSON giới hạn kích thước bằng `POST /api/bizreader/content`, dùng
-cùng `X-BizReader-Token` của phiên BizTransfer. Firmware kiểm tra cấu trúc rồi
-ghi nguyên tử vào `/.crosspoint/bizsync/content.json`. Ghi chú, việc cần làm,
-lịch và thời tiết là dữ liệu chỉ đọc trên thiết bị.
-
-Chế độ nền nghỉ nằm tại `sleep.mode` (`calendar` hoặc `photo`). Với chế độ ảnh,
-App đổi ảnh sang BMP 960 x 540 và tải lên `PUT /sleep.bmp` kèm kích thước,
-SHA-256 và token trước khi chốt bản JSON. Chế độ lịch dùng RTC, thời tiết và tối
-đa ba sự kiện trong bản đồng bộ.
-
-## Trình tự
-
-1. Người dùng mở **Truyền tệp > Kết nối App** để bật BLE.
-2. Người dùng chạm thiết bị để App lưu BLE ID, không cần ghép đôi.
-3. Khi gửi sách, App kết nối BLE và gửi `start`.
-4. Firmware dùng Wi-Fi đã lưu rồi trả IP và token phiên qua BLE.
-5. App tính SHA-256 và stream file bằng HTTP `PUT`, hoặc gọi API tiến độ khi
-   người dùng bấm đồng bộ.
-6. Firmware xác minh, hoàn tất file và thông báo `complete`; tiến độ App gửi
-   được áp dụng ở lần mở EPUB kế tiếp.
-7. Thoát màn hình hoặc sau 5 phút không có phiên truyền, firmware tắt BLE,
-   HTTP và Wi-Fi.
-
-BLE mở coi khoảng cách gần là ranh giới tin cậy. Một BLE client ở gần có thể
-kích hoạt phiên và đọc token ngắn hạn; mật khẩu Wi-Fi không được truyền qua
-kênh này.
+Thiết kế coi khoảng cách gần và thao tác bật **Kết nối App** trên máy là ranh
+giới tin cậy. Một BLE client ở gần trong cửa sổ này có thể đọc/ghi snapshot hoặc
+kích hoạt phiên Wi-Fi. Mật khẩu Wi-Fi không đi qua BLE. Đây chưa phải cơ chế xác
+thực phù hợp cho môi trường công cộng có yêu cầu bảo mật cao.

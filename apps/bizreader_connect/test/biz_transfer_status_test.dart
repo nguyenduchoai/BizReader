@@ -30,4 +30,17 @@ void main() {
     expect(status.isReady, isFalse);
     expect(status.isError, isTrue);
   });
+
+  test('parses BLE sync snapshot metadata', () {
+    final status = BizTransferStatus.fromJson({
+      'state': 'sync_ready',
+      'message': 'Đồng bộ BLE hoàn tất',
+      'syncChunks': 12,
+      'syncSize': 2048,
+    });
+
+    expect(status.isSyncReady, isTrue);
+    expect(status.syncChunks, 12);
+    expect(status.syncSize, 2048);
+  });
 }

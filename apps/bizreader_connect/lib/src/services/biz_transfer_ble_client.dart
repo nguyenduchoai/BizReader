@@ -6,6 +6,10 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/biz_transfer_status.dart';
+import '../models/biz_sync_snapshot.dart';
+import '../models/biz_content.dart';
+import '../models/device_reading_progress.dart';
+import 'ble_sync_codec.dart';
 
 class BizTransferException implements Exception {
   const BizTransferException(this.message);
@@ -28,6 +32,12 @@ class BizTransferBleClient {
   static final Uuid statusUuid = Uuid.parse(
     '7d2f1002-8d4f-4f5b-a8d0-53b495a9b001',
   );
+  static final Uuid syncRxUuid = Uuid.parse(
+    '7d2f1004-8d4f-4f5b-a8d0-53b495a9b001',
+  );
+  static final Uuid syncTxUuid = Uuid.parse(
+    '7d2f1005-8d4f-4f5b-a8d0-53b495a9b001',
+  );
 
   final FlutterReactiveBle? _injectedBle;
   FlutterReactiveBle? _bleInstance;
@@ -35,6 +45,9 @@ class BizTransferBleClient {
   String? _connectedDeviceId;
   QualifiedCharacteristic? _commandCharacteristic;
   QualifiedCharacteristic? _statusCharacteristic;
+  QualifiedCharacteristic? _syncRxCharacteristic;
+  QualifiedCharacteristic? _syncTxCharacteristic;
+  int _mtu = 23;
 
   FlutterReactiveBle get _ble =>
       _injectedBle ?? (_bleInstance ??= FlutterReactiveBle());
@@ -156,10 +169,133 @@ class BizTransferBleClient {
     }
   }
 
+  Future<BizSyncSnapshot> synchronize({
+    required String deviceId,
+    required BizSyncSnapshot local,
+  }) async {
+    await ensurePermissions();
+    await _connect(deviceId);
+    try {
+      final remote = await _pullSnapshot();
+      final merged = BizSyncSnapshot(
+        content: BizContent.merge(local.content, remote.content),
+        progress: _mergeProgress(local.progress, remote.progress),
+      );
+      return await _pushSnapshot(merged);
+    } on BizTransferException {
+      rethrow;
+    } on Object catch (error) {
+      throw BizTransferException('Không đồng bộ được qua BLE: $error');
+    } finally {
+      await disconnect();
+    }
+  }
+
+  List<DeviceReadingProgress> _mergeProgress(
+    List<DeviceReadingProgress> local,
+    List<DeviceReadingProgress> remote,
+  ) {
+    final merged = <String, DeviceReadingProgress>{};
+    for (final item in remote) {
+      merged[item.filename] = item;
+    }
+    for (final item in local) {
+      final previous = merged[item.filename];
+      if (previous == null || item.updatedAt > previous.updatedAt) {
+        merged[item.filename] = DeviceReadingProgress(
+          filename: item.filename,
+          percentage: item.percentage,
+          spineIndex: item.spineIndex,
+          pageNumber: item.pageNumber,
+          pageCount: item.pageCount,
+          pending: true,
+          updatedAt: item.updatedAt,
+        );
+      }
+    }
+    return merged.values.toList();
+  }
+
+  Future<BizSyncSnapshot> _pullSnapshot() async {
+    final frameSize = min(240, max(20, _mtu - 3));
+    final status = await _writeCommandAndWait(
+      'sync_pull',
+      extra: {'frameSize': frameSize},
+      acceptedState: 'sync_ready',
+    );
+    return _readSnapshot(status);
+  }
+
+  Future<BizSyncSnapshot> _pushSnapshot(BizSyncSnapshot snapshot) async {
+    final bytes = utf8.encode(jsonEncode(snapshot.toJson()));
+    final payloadSize = min(236, max(16, _mtu - 7));
+    final frames = encodeBleSyncFrames(bytes, payloadSize);
+    await _writeCommandAndWait(
+      'sync_begin',
+      extra: {'size': bytes.length, 'chunks': frames.length},
+      acceptedState: 'sync_receiving',
+    );
+    for (final frame in frames) {
+      await _ble.writeCharacteristicWithResponse(
+        _syncRxCharacteristic!,
+        value: frame,
+      );
+    }
+    final status = await _writeCommandAndWait(
+      'sync_commit',
+      acceptedState: 'sync_ready',
+    );
+    return _readSnapshot(status);
+  }
+
+  Future<BizSyncSnapshot> _readSnapshot(BizTransferStatus status) async {
+    if (status.syncChunks < 1 || status.syncSize < 1) {
+      throw const BizTransferException('Thiết bị không trả snapshot BLE.');
+    }
+    final frames = <List<int>>[];
+    for (var index = 0; index < status.syncChunks; index++) {
+      frames.add(await _ble.readCharacteristic(_syncTxCharacteristic!));
+    }
+    final bytes = decodeBleSyncFrames(frames);
+    if (bytes.length != status.syncSize) {
+      throw const BizTransferException('Kích thước snapshot BLE không khớp.');
+    }
+    final decoded = jsonDecode(utf8.decode(bytes));
+    if (decoded is! Map) {
+      throw const BizTransferException('Snapshot BLE không hợp lệ.');
+    }
+    return BizSyncSnapshot.fromJson(decoded.cast<String, Object?>());
+  }
+
+  Future<BizTransferStatus> _writeCommandAndWait(
+    String operation, {
+    Map<String, Object?> extra = const {},
+    required String acceptedState,
+  }) async {
+    final requestId = Random.secure().nextInt(0x7fffffff).toRadixString(16);
+    await _ble.writeCharacteristicWithResponse(
+      _commandCharacteristic!,
+      value: utf8.encode(
+        jsonEncode({'op': operation, 'request': requestId, ...extra}),
+      ),
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      final status = await _readCurrentStatus();
+      if (status.requestId != requestId) continue;
+      if (status.isError) throw BizTransferException(status.message);
+      if (status.state == acceptedState) return status;
+    }
+    throw const BizTransferException('Hết thời gian chờ đồng bộ BLE.');
+  }
+
   Future<void> _connect(String deviceId) async {
     if (_connectedDeviceId == deviceId &&
         _commandCharacteristic != null &&
-        _statusCharacteristic != null) {
+        _statusCharacteristic != null &&
+        _syncRxCharacteristic != null &&
+        _syncTxCharacteristic != null) {
       return;
     }
 
@@ -171,7 +307,7 @@ class BizTransferBleClient {
           withServices: [serviceUuid],
           prescanDuration: const Duration(seconds: 8),
           servicesWithCharacteristicsToDiscover: {
-            serviceUuid: [commandUuid, statusUuid],
+            serviceUuid: [commandUuid, statusUuid, syncRxUuid, syncTxUuid],
           },
           connectionTimeout: const Duration(seconds: 12),
         )
@@ -210,7 +346,7 @@ class BizTransferBleClient {
     );
 
     try {
-      await _ble.requestMtu(deviceId: deviceId, mtu: 247);
+      _mtu = await _ble.requestMtu(deviceId: deviceId, mtu: 247);
     } catch (_) {
       // Status reads still work through standard GATT long-read behavior.
     }
@@ -223,6 +359,16 @@ class BizTransferBleClient {
     _statusCharacteristic = QualifiedCharacteristic(
       serviceId: serviceUuid,
       characteristicId: statusUuid,
+      deviceId: deviceId,
+    );
+    _syncRxCharacteristic = QualifiedCharacteristic(
+      serviceId: serviceUuid,
+      characteristicId: syncRxUuid,
+      deviceId: deviceId,
+    );
+    _syncTxCharacteristic = QualifiedCharacteristic(
+      serviceId: serviceUuid,
+      characteristicId: syncTxUuid,
       deviceId: deviceId,
     );
   }
@@ -242,5 +388,8 @@ class BizTransferBleClient {
     _connectedDeviceId = null;
     _commandCharacteristic = null;
     _statusCharacteristic = null;
+    _syncRxCharacteristic = null;
+    _syncTxCharacteristic = null;
+    _mtu = 23;
   }
 }

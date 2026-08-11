@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 
 import 'models/biz_transfer_status.dart';
+import 'models/biz_sync_snapshot.dart';
 import 'models/biz_content.dart';
 import 'models/device_config.dart';
 import 'models/device_reading_progress.dart';
@@ -134,11 +135,18 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  Future<void> deleteNote(String id) => _saveContent(
-    content.copyWith(
-      notes: content.notes.where((item) => item.id != id).toList(),
-    ),
-  );
+  Future<void> deleteNote(String id) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _saveContent(
+      content.copyWith(
+        notes: content.notes.where((item) => item.id != id).toList(),
+        deletedNotes: [
+          ...content.deletedNotes.where((item) => item.id != id),
+          BizDeletedItem(id: id, updatedAt: now),
+        ],
+      ),
+    );
+  }
 
   Future<void> addTodo(String title, {String due = ''}) {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -146,26 +154,44 @@ class AppController extends ChangeNotifier {
       content.copyWith(
         todos: [
           ...content.todos,
-          BizTodo(id: 'todo-$now', title: title.trim(), due: due.trim()),
+          BizTodo(
+            id: 'todo-$now',
+            title: title.trim(),
+            due: due.trim(),
+            updatedAt: now,
+          ),
         ],
       ),
     );
   }
 
-  Future<void> toggleTodo(String id) => _saveContent(
-    content.copyWith(
-      todos: [
-        for (final item in content.todos)
-          if (item.id == id) item.copyWith(done: !item.done) else item,
-      ],
-    ),
-  );
+  Future<void> toggleTodo(String id) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _saveContent(
+      content.copyWith(
+        todos: [
+          for (final item in content.todos)
+            if (item.id == id)
+              item.copyWith(done: !item.done, updatedAt: now)
+            else
+              item,
+        ],
+      ),
+    );
+  }
 
-  Future<void> deleteTodo(String id) => _saveContent(
-    content.copyWith(
-      todos: content.todos.where((item) => item.id != id).toList(),
-    ),
-  );
+  Future<void> deleteTodo(String id) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _saveContent(
+      content.copyWith(
+        todos: content.todos.where((item) => item.id != id).toList(),
+        deletedTodos: [
+          ...content.deletedTodos.where((item) => item.id != id),
+          BizDeletedItem(id: id, updatedAt: now),
+        ],
+      ),
+    );
+  }
 
   Future<void> addCalendarEvent({
     required String title,
@@ -243,21 +269,51 @@ class AppController extends ChangeNotifier {
       return;
     }
     contentSyncing = true;
-    contentSyncMessage = 'Đang kết nối BizReader';
+    contentSyncMessage = 'Đang đồng bộ hai chiều qua BLE';
     notifyListeners();
     try {
-      await _withTransferClient((client) async {
-        final wallpaper = content.wallpaperPath;
-        if (content.sleepMode == BizSleepMode.photo && wallpaper != null) {
-          await client.uploadFile(
-            remotePath: '/sleep.bmp',
-            file: File(wallpaper),
-            contentType: 'image/bmp',
-          );
-        }
-        await client.pushContent(content);
-      });
-      contentSyncMessage = 'Đã đồng bộ xuống thiết bị';
+      if (device.bleId.isEmpty) {
+        throw const BizTransferException(
+          'Hãy chọn BizReader trong mục Thiết bị trước.',
+        );
+      }
+      final snapshot = await _bleClient.synchronize(
+        deviceId: device.bleId,
+        local: BizSyncSnapshot(
+          content: content,
+          progress: [
+            for (final book in books)
+              DeviceReadingProgress(
+                filename: book.remoteFilename,
+                percentage: book.progress,
+                spineIndex: book.chapterNumber > 0 ? book.chapterNumber - 1 : 0,
+                updatedAt: book.updatedAt,
+              ),
+          ],
+        ),
+      );
+      content = snapshot.content.copyWith(wallpaperPath: content.wallpaperPath);
+      final progressByFilename = {
+        for (final item in snapshot.progress) item.filename: item,
+      };
+      books = [
+        for (final book in books)
+          if (progressByFilename[book.remoteFilename] case final progress?)
+            book.copyWith(
+              progress: progress.percentage,
+              chapterNumber: progress.spineIndex + 1,
+              chapterProgress: 0,
+              clearEpubCfi: progress.updatedAt > book.updatedAt,
+              updatedAt: progress.updatedAt,
+            )
+          else
+            book,
+      ];
+      await _contentPreferences.save(content);
+      await _bookLibrary.save(books);
+      contentSyncMessage = content.sleepMode == BizSleepMode.photo
+          ? 'Đã đồng bộ BLE; ảnh nền mới vẫn gửi bằng Wi-Fi'
+          : 'Đã đồng bộ hai chiều qua BLE';
     } on Object catch (error) {
       contentSyncMessage = error.toString();
       rethrow;
@@ -265,6 +321,20 @@ class AppController extends ChangeNotifier {
       contentSyncing = false;
       notifyListeners();
     }
+  }
+
+  Future<void> sendWallpaperToDevice() async {
+    final wallpaper = content.wallpaperPath;
+    if (wallpaper == null || content.sleepMode != BizSleepMode.photo) {
+      throw const FormatException('Hãy chọn ảnh nền trước.');
+    }
+    await _withTransferClient(
+      (client) => client.uploadFile(
+        remotePath: '/sleep.bmp',
+        file: File(wallpaper),
+        contentType: 'image/bmp',
+      ),
+    );
   }
 
   Future<LocalBook> importBook(File file, String originalFilename) async {

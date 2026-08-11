@@ -42,8 +42,10 @@ class DashboardScreen extends StatelessWidget {
             actions: [
               if (controller.device.isConfigured)
                 IconButton(
-                  onPressed: controller.checkConnection,
-                  tooltip: 'Kiểm tra kết nối',
+                  onPressed: controller.contentSyncing
+                      ? null
+                      : () => _sync(context),
+                  tooltip: 'Đồng bộ BLE hai chiều',
                   icon: const Icon(Icons.sync),
                 )
               else
@@ -96,7 +98,7 @@ class DashboardScreen extends StatelessWidget {
                         _AppTile(
                           icon: Icons.checklist,
                           title: 'Việc cần làm',
-                          value: 'Đồng bộ xuống máy',
+                          value: 'Đồng bộ hai chiều',
                           tint: const Color(0xFFF7F0E8),
                           onTap: () => _openContent(context, 1),
                         ),
@@ -147,6 +149,16 @@ class DashboardScreen extends StatelessWidget {
               ContentHubScreen(controller: controller, initialTab: tab),
         ),
       );
+
+  Future<void> _sync(BuildContext context) async {
+    try {
+      await controller.syncContentToDevice();
+      if (!context.mounted) return;
+      _showMessage(context, controller.contentSyncMessage ?? 'Đã đồng bộ');
+    } on Object catch (error) {
+      if (context.mounted) _showMessage(context, error.toString());
+    }
+  }
 
   Future<void> _pickAndOpenFile(BuildContext context) async {
     final result = await FilePicker.platform.pickFiles(

@@ -17,8 +17,8 @@
 #include <iterator>
 #include <limits>
 
-#include "BookmarkEntry.h"
 #include "BizReadingProgressStore.h"
+#include "BookmarkEntry.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderBookmarksActivity.h"
@@ -1045,6 +1045,10 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   progress.pageNumber = currentPage;
   progress.pageCount = pageCount;
   progress.pending = false;
+  BizReadingProgress previous;
+  const uint64_t previousTimestamp =
+      BizReadingProgressStore::load(progress.filename, previous) ? previous.updatedAt : 0;
+  progress.updatedAt = BizReadingProgressStore::nextTimestamp(previousTimestamp);
   if (!BizReadingProgressStore::save(progress)) {
     LOG_ERR("BIZ", "Cannot save app reading progress for %s", progress.filename.c_str());
   }

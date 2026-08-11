@@ -5,14 +5,11 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../models/local_book.dart';
-import '../models/device_reading_progress.dart';
 import '../services/book_library_service.dart';
 import '../services/webdav_device_client.dart';
 import 'reader_screen.dart';
 
 enum TransferStatus { waiting, preparing, uploading, done, failed }
-
-enum _SyncChoice { phone, device }
 
 class TransferItem {
   TransferItem(this.name);
@@ -191,89 +188,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (_syncingBookId != null) return;
     setState(() => _syncingBookId = book.id);
     try {
-      final deviceProgress = await widget.controller.fetchDeviceProgress(book);
+      await widget.controller.syncContentToDevice();
       if (!mounted) return;
-      if (deviceProgress == null) {
-        final shouldPush = await _confirmFirstProgress(book);
-        if (shouldPush == true) {
-          await widget.controller.pushProgressToDevice(book);
-          if (mounted) {
-            _showMessage('Đã gửi vị trí đọc sang BizReader.');
-          }
-        }
-        return;
-      }
-
-      if ((deviceProgress.percentage - book.progress).abs() < 0.005) {
-        _showMessage('Vị trí đọc đã đồng bộ.');
-        return;
-      }
-
-      final choice = await _chooseProgress(book, deviceProgress);
-      if (choice == _SyncChoice.phone) {
-        await widget.controller.pushProgressToDevice(book);
-        if (mounted) _showMessage('BizReader sẽ mở tại vị trí điện thoại.');
-      } else if (choice == _SyncChoice.device) {
-        await widget.controller.useDeviceProgress(book, deviceProgress);
-        if (mounted) _showMessage('Đã dùng vị trí đọc từ BizReader.');
-      }
-    } on DeviceConnectionException catch (error) {
-      if (mounted) _showMessage(error.message);
+      final synced = widget.controller.books.firstWhere(
+        (item) => item.id == book.id,
+        orElse: () => book,
+      );
+      _showMessage(
+        'Đã đồng bộ BLE • ${(synced.progress * 100).round()}% trên cả hai thiết bị.',
+      );
+    } on Object catch (error) {
+      if (mounted) _showMessage(error.toString());
     } finally {
       if (mounted) setState(() => _syncingBookId = null);
     }
-  }
-
-  Future<_SyncChoice?> _chooseProgress(
-    LocalBook book,
-    DeviceReadingProgress deviceProgress,
-  ) {
-    String percent(double value) => '${(value * 100).round()}%';
-    return showDialog<_SyncChoice>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Chọn vị trí đọc'),
-        content: const Text(
-          'Hai thiết bị đang ở vị trí khác nhau. Chọn vị trí muốn giữ lại.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.pop(context, _SyncChoice.device),
-            child: Text('BizReader • ${percent(deviceProgress.percentage)}'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, _SyncChoice.phone),
-            child: Text('Điện thoại • ${percent(book.progress)}'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool?> _confirmFirstProgress(LocalBook book) {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Chưa có vị trí trên BizReader'),
-        content: Text(
-          'Gửi vị trí ${(book.progress * 100).round()}% từ điện thoại sang máy đọc?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Gửi sang BizReader'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override

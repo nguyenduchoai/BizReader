@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ctime>
 
 namespace {
 constexpr char PROGRESS_DIRECTORY[] = "/.crosspoint/bizsync";
@@ -56,6 +57,7 @@ bool BizReadingProgressStore::load(const std::string& filename, BizReadingProgre
   progress.pageNumber = std::max(0, document["pageNumber"] | 0);
   progress.pageCount = std::max(0, document["pageCount"] | 0);
   progress.pending = document["pending"] | false;
+  progress.updatedAt = document["updatedAt"] | uint64_t{0};
   return true;
 }
 
@@ -70,8 +72,31 @@ bool BizReadingProgressStore::save(const BizReadingProgress& progress) {
   document["pageNumber"] = std::max(0, progress.pageNumber);
   document["pageCount"] = std::max(0, progress.pageCount);
   document["pending"] = progress.pending;
+  document["updatedAt"] = progress.updatedAt;
 
   String json;
   serializeJson(document, json);
   return Storage.writeFile(pathForFilename(progress.filename).c_str(), json);
+}
+
+std::vector<BizReadingProgress> BizReadingProgressStore::list(const int maxItems) {
+  std::vector<BizReadingProgress> result;
+  for (const String& name : Storage.listFiles(PROGRESS_DIRECTORY, maxItems + 4)) {
+    if (!name.endsWith(".json") || name == "content.json") continue;
+    const std::string path = std::string(PROGRESS_DIRECTORY) + "/" + name.c_str();
+    const String json = Storage.readFile(path.c_str());
+    JsonDocument document;
+    if (deserializeJson(document, json)) continue;
+    const std::string filename = document["filename"] | std::string();
+    BizReadingProgress progress;
+    if (!filename.empty() && load(filename, progress)) result.push_back(progress);
+    if (static_cast<int>(result.size()) >= maxItems) break;
+  }
+  return result;
+}
+
+uint64_t BizReadingProgressStore::nextTimestamp(const uint64_t previous) {
+  const time_t now = time(nullptr);
+  const uint64_t epochMs = now > 1700000000 ? static_cast<uint64_t>(now) * 1000ULL : 0;
+  return std::max(epochMs, previous + 1);
 }

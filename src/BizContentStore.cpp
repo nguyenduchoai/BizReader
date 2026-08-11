@@ -5,6 +5,7 @@
 #include <Logging.h>
 
 #include <algorithm>
+#include <ctime>
 
 namespace {
 constexpr char DIRECTORY[] = "/.crosspoint/bizsync";
@@ -21,7 +22,8 @@ std::string limited(const JsonVariantConst value, const size_t maxLength) {
 }
 
 bool validateDocument(const JsonDocument& document, std::string& error) {
-  if ((document["version"] | 0) != 1) {
+  const int version = document["version"] | 0;
+  if (version != 1 && version != 2) {
     error = "unsupported_version";
     return false;
   }
@@ -35,12 +37,30 @@ bool validateDocument(const JsonDocument& document, std::string& error) {
     error = "too_many_items";
     return false;
   }
+  if (version >= 2 &&
+      (!document["deleted"].is<JsonObjectConst>() || !document["deleted"]["notes"].is<JsonArrayConst>() ||
+       !document["deleted"]["todos"].is<JsonArrayConst>())) {
+    error = "invalid_deleted_shape";
+    return false;
+  }
+  if (version >= 2) {
+    if (document["deleted"]["notes"].size() > 80 || document["deleted"]["todos"].size() > 120) {
+      error = "too_many_tombstones";
+      return false;
+    }
+  }
   const std::string mode = document["sleep"]["mode"] | "calendar";
   if (mode != "calendar" && mode != "photo") {
     error = "invalid_sleep_mode";
     return false;
   }
   return true;
+}
+
+uint64_t nextTimestamp(const uint64_t previous) {
+  const time_t now = time(nullptr);
+  const uint64_t epochMs = now > 1700000000 ? static_cast<uint64_t>(now) * 1000ULL : 0;
+  return std::max(epochMs, previous + 1);
 }
 }  // namespace
 
@@ -104,14 +124,63 @@ bool BizContentStore::load(BizContentData& data) {
   data.weather.low = std::clamp(weather["low"] | 0, -99, 99);
 
   for (const JsonObjectConst item : document["notes"].as<JsonArrayConst>()) {
-    data.notes.push_back({limited(item["title"], 120), limited(item["body"], 600)});
+    data.notes.push_back({limited(item["id"], 80), limited(item["title"], 120), limited(item["body"], 600),
+                          item["updatedAt"] | uint64_t{0}});
   }
   for (const JsonObjectConst item : document["todos"].as<JsonArrayConst>()) {
-    data.todos.push_back({limited(item["title"], 140), limited(item["due"], 60), item["done"] | false});
+    data.todos.push_back({limited(item["id"], 80), limited(item["title"], 140), limited(item["due"], 60),
+                          item["done"] | false, item["updatedAt"] | uint64_t{0}});
+  }
+  if (document["deleted"].is<JsonObjectConst>()) {
+    for (const JsonObjectConst item : document["deleted"]["notes"].as<JsonArrayConst>()) {
+      data.deletedNotes.push_back({limited(item["id"], 80), item["updatedAt"] | uint64_t{0}});
+    }
+    for (const JsonObjectConst item : document["deleted"]["todos"].as<JsonArrayConst>()) {
+      data.deletedTodos.push_back({limited(item["id"], 80), item["updatedAt"] | uint64_t{0}});
+    }
   }
   for (const JsonObjectConst item : document["events"].as<JsonArrayConst>()) {
     data.events.push_back({limited(item["title"], 140), limited(item["date"], 10), limited(item["time"], 5),
                            limited(item["location"], 100)});
   }
   return true;
+}
+
+bool BizContentStore::loadJson(std::string& json) {
+  json.clear();
+  if (!Storage.exists(PATH)) return false;
+  const String stored = Storage.readFile(PATH);
+  if (stored.isEmpty()) return false;
+  json.assign(stored.c_str(), stored.length());
+  return true;
+}
+
+bool BizContentStore::toggleTodo(const std::string& id) {
+  if (id.empty() || !Storage.exists(PATH)) return false;
+  const String stored = Storage.readFile(PATH);
+  JsonDocument document;
+  std::string error;
+  if (deserializeJson(document, stored) || !validateDocument(document, error)) return false;
+
+  const uint64_t timestamp = nextTimestamp(document["updatedAt"] | uint64_t{0});
+  bool found = false;
+  for (JsonObject item : document["todos"].as<JsonArray>()) {
+    if (std::string(item["id"] | "") != id) continue;
+    item["done"] = !(item["done"] | false);
+    item["updatedAt"] = timestamp;
+    found = true;
+    break;
+  }
+  if (!found) return false;
+
+  document["version"] = 2;
+  document["updatedAt"] = timestamp;
+  if (!document["deleted"].is<JsonObject>()) {
+    JsonObject deleted = document["deleted"].to<JsonObject>();
+    deleted["notes"].to<JsonArray>();
+    deleted["todos"].to<JsonArray>();
+  }
+  String json;
+  serializeJson(document, json);
+  return saveJson(std::string(json.c_str(), json.length()), error);
 }

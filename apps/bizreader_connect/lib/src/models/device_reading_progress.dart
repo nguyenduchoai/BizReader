@@ -6,6 +6,7 @@ class DeviceReadingProgress {
     this.pageNumber = 0,
     this.pageCount = 0,
     this.pending = false,
+    this.updatedAt = 0,
   });
 
   final String filename;
@@ -14,6 +15,17 @@ class DeviceReadingProgress {
   final int pageNumber;
   final int pageCount;
   final bool pending;
+  final int updatedAt;
+
+  Map<String, Object?> toJson() => {
+    'filename': filename,
+    'percentage': percentage,
+    'spineIndex': spineIndex,
+    'pageNumber': pageNumber,
+    'pageCount': pageCount,
+    'pending': pending,
+    'updatedAt': updatedAt,
+  };
 
   factory DeviceReadingProgress.fromJson(Map<String, Object?> json) {
     return DeviceReadingProgress(
@@ -23,6 +35,7 @@ class DeviceReadingProgress {
       pageNumber: (json['pageNumber'] as num?)?.toInt() ?? 0,
       pageCount: (json['pageCount'] as num?)?.toInt() ?? 0,
       pending: json['pending'] as bool? ?? false,
+      updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
     );
   }
 }

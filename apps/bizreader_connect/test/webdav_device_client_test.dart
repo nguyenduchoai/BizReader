@@ -182,7 +182,7 @@ void main() {
     client.close();
   });
 
-  test('pushes app content as authenticated one-way JSON', () async {
+  test('pushes app content as authenticated v2 JSON', () async {
     late http.Request captured;
     final mock = MockClient((request) async {
       captured = request;
@@ -208,7 +208,7 @@ void main() {
     expect(captured.method, 'POST');
     expect(captured.url.path, '/api/bizreader/content');
     expect(captured.headers['X-BizReader-Token'], 'session-token');
-    expect(body['version'], 1);
+    expect(body['version'], 2);
     expect((body['sleep'] as Map)['mode'], 'calendar');
     client.close();
   });
