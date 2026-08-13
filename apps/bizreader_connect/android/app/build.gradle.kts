@@ -13,6 +13,12 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+fun signingProperty(name: String): String? =
+    keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+
+val requiredSigningProperties = listOf("keyAlias", "keyPassword", "storeFile", "storePassword")
+val hasCompleteReleaseSigning = requiredSigningProperties.all { signingProperty(it) != null }
+
 android {
     namespace = "vn.bizreader.connect"
     compileSdk = flutter.compileSdkVersion
@@ -35,21 +41,19 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+            if (hasCompleteReleaseSigning) {
+                keyAlias = signingProperty("keyAlias")!!
+                keyPassword = signingProperty("keyPassword")!!
+                storeFile = file(signingProperty("storeFile")!!)
+                storePassword = signingProperty("storePassword")!!
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (hasCompleteReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }
@@ -75,4 +79,34 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     testImplementation("junit:junit:4.13.2")
+}
+
+val validateReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "Fails release artifacts when the private upload key is unavailable."
+    doLast {
+        if (!keystorePropertiesFile.exists()) {
+            throw GradleException(
+                "Không có android/key.properties. Release APK/AAB không được phép dùng debug signing. " +
+                    "Hãy cấu hình upload key; bản debug vẫn build bình thường.",
+            )
+        }
+        val missing = requiredSigningProperties.filter { signingProperty(it) == null }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Thiếu ${missing.joinToString()} trong android/key.properties. " +
+                    "Bản debug vẫn build bình thường.",
+            )
+        }
+        val store = file(signingProperty("storeFile")!!)
+        if (!store.isFile) {
+            throw GradleException("Không tìm thấy upload keystore: ${store.absolutePath}")
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name in setOf("assembleRelease", "bundleRelease", "packageRelease", "signReleaseBundle")) {
+        dependsOn(validateReleaseSigning)
+    }
 }

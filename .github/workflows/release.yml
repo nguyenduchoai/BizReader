@@ -1,16 +1,27 @@
-name: Compile Release
+name: Compile BizReader LilyGo Release
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
-  build-release:
+  build-bizreader-lilygo-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Verify release revision and version tag
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          version="$(awk -F ' *= *' '/^version *=/ { print $2; exit }' platformio.ini)"
+          test "$GITHUB_REF_NAME" = "v${version}"
 
       - uses: actions/setup-python@v6
         with:
@@ -32,16 +43,63 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
-      - name: Build CrossPoint
-        run: pio run -e gh_release
+      - name: Build BizReader for LilyGo T5 EPD47
+        run: pio run -e lilygo_release
 
-      - name: Upload Artifacts
+      - name: Package Corresponding Source
+        env:
+          PIO_ENV: lilygo_release
+          SOURCE_ARCHIVE: BizReader-LilyGo-${{ github.ref_name }}-source.tar.gz
+        run: |
+          set -euo pipefail
+          mkdir -p .release-source
+          python3 scripts/package_corresponding_source.py \
+            --env "$PIO_ENV" \
+            --output ".release-source/${SOURCE_ARCHIVE}"
+
+      - name: Stage release assets and checksums
+        run: |
+          set -euo pipefail
+          mkdir -p .release-assets
+          cp \
+            .pio/build/lilygo_release/bootloader.bin \
+            .pio/build/lilygo_release/firmware.bin \
+            .pio/build/lilygo_release/firmware.elf \
+            .pio/build/lilygo_release/firmware.map \
+            .pio/build/lilygo_release/partitions.bin \
+            LICENSE \
+            licenses/LilyGo-EPD47-GPL-3.0.txt \
+            THIRD_PARTY_NOTICES.md \
+            .release-source/BizReader-LilyGo-${{ github.ref_name }}-source.tar.gz \
+            .release-assets/
+          (
+            cd .release-assets
+            sha256sum \
+              bootloader.bin \
+              firmware.bin \
+              partitions.bin \
+              BizReader-LilyGo-${{ github.ref_name }}-source.tar.gz \
+              > checksums.sha256
+          )
+
+      - name: Upload BizReader LilyGo artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CrossPoint-${{ github.ref_name }}
-          path: |
-            .pio/build/gh_release/bootloader.bin
-            .pio/build/gh_release/firmware.bin
-            .pio/build/gh_release/firmware.elf
-            .pio/build/gh_release/firmware.map
-            .pio/build/gh_release/partitions.bin
+          name: BizReader-LilyGo-${{ github.ref_name }}
+          if-no-files-found: error
+          path: .release-assets/*
+
+      - name: Publish GitHub release for device OTA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          readonly tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; published release assets are immutable." >&2
+            exit 1
+          fi
+          gh release create "$tag" .release-assets/* \
+            --verify-tag \
+            --title "BizReader ${tag}" \
+            --generate-notes

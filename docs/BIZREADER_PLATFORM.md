@@ -1,177 +1,125 @@
-# BizReader Platform
+# Kiến trúc BizReader
 
-## Mục tiêu
+## Phạm vi sản phẩm
 
-BizReader giữ trải nghiệm đọc EPUB của CrossPoint và bổ sung mô hình điều
-khiển tương tự reTerminal Sticky dưới thương hiệu, giao diện và giao thức riêng:
+BizReader gồm firmware LilyGo T5 EPD47 và App Android. Trình đọc sách và thư
+viện là chức năng chính; App không bắt người dùng kết nối thiết bị trước khi đọc.
 
-- Lưu thiết bị BLE và kích hoạt Wi-Fi đã cấu hình trên máy đọc.
-- Gửi sách, ghi chú, việc cần làm, lịch, thời tiết và ảnh.
-- Hiển thị màn hình nghỉ có lịch hoặc ảnh cá nhân.
-- Đồng bộ hai chiều, hoạt động ngoại tuyến và tự đồng bộ lại.
-- Cập nhật OTA và quản lý nhiều thiết bị.
-- Giữ WebDAV, web file manager và Calibre hiện có.
+Phạm vi đang có trong mã nguồn:
 
-Không sao chép mã đóng, APK, tài nguyên nhận diện hoặc API riêng của Seeed.
-Mã nguồn mở được tái sử dụng theo đúng giấy phép và có ghi công.
+- đọc sách trên thiết bị và EPUB trên Android;
+- cảm ứng trên firmware EPD47 và nút vật lý theo board profile;
+- BLE Sync v2 cho snapshot nhỏ;
+- BLE kích hoạt máy đọc tự nối Wi-Fi đã lưu;
+- HTTP có token cho sách, ảnh và dữ liệu tương thích cũ;
+- WebDAV, web file manager, Calibre và OPDS độc lập với App;
+- ghi chú, việc cần làm, lịch, thời tiết và nền nghỉ;
+- trình xem nhiều định dạng ngoại tuyến trên Android.
 
-## Đối chiếu phần cứng
+Chưa có: tài khoản/cloud relay, đồng bộ từ xa, nhiều người dùng, push notification,
+giọng nói, cập nhật firmware từ App hoặc iOS. Những mục này không phải điều kiện
+để đọc sách và không được coi là chức năng đã vận hành.
 
-| Thành phần | reTerminal Sticky | LilyGo T5 EPD47 v2.4 | Hướng xử lý |
-| --- | --- | --- | --- |
-| MCU | ESP32-S3R8 | ESP32-S3 N16R8 | Tương thích kiến trúc |
-| Màn hình | 800 x 480, 3.97 inch | 960 x 540, 4.7 inch | Layout theo kích thước động |
-| Cảm ứng | GT911 | GT911 | Dùng FreeInk InputManager |
-| Thẻ nhớ | microSD | microSD | Nguồn dữ liệu cục bộ |
-| Wi-Fi/BLE | Có | Có | LAN, discovery và đồng bộ |
-| Nút dùng được | 3 | 1 nút ứng dụng | Cảm ứng là điều khiển chính |
-| Micro | PDM | Không | Nhận giọng nói trên điện thoại |
-| RTC | PCF8563 | Không | NTP + thời gian hệ thống |
-| Buzzer | Có | Không | Nhắc việc trên điện thoại |
-| Cảm biến/IMU | Có | Không | Dữ liệu thời tiết qua mạng |
+## Phần cứng đích
 
-## Trạng thái triển khai
+| Thành phần | LilyGo T5 EPD47 v2.4 |
+| --- | --- |
+| MCU | ESP32-S3-WROOM-1 N16R8 |
+| Màn hình | ED047TC1, 960 x 540, 4.7 inch |
+| Cảm ứng | GT911 |
+| Lưu trữ | microSD qua SPI |
+| Kết nối | Wi-Fi 2.4 GHz và BLE |
+| Thời gian | PCF8563 nếu có trên revision; NTP khi kết nối mạng |
 
-BizTransfer v1 đã có trong firmware LilyGo và App Android:
+Profile firmware hiện coi GPIO21 là nút người dùng/nguồn. Quay lại, chọn, cuộn
+và chuyển trang được tổng hợp từ GT911. Các nút nhìn thấy trên vỏ nhưng nối vào
+reset/boot hoặc đường điều khiển màn hình không được mặc định coi là nút ứng
+dụng. Cần UAT đúng revision phần cứng trước khi thay đổi pin map.
 
-- BLE chỉ bật từ menu **Truyền tệp > Kết nối App**, không bonding hoặc passkey.
-- Chỉ dùng Wi-Fi đã lưu trên BizReader; App không nhận mật khẩu mạng.
-- Token HTTP ngắn hạn được trả qua BLE khi thiết bị ở gần.
-- HTTP stream vào `/Ebook`, file `.part`, kiểm tra kích thước và SHA-256.
-- App nhập và đọc EPUB cục bộ, có thư viện mẫu để demo/chụp ảnh.
-- Đồng bộ vị trí đọc thủ công hai chiều theo từng EPUB, có bước chọn xung đột.
-- Tự tắt Wi-Fi/server sau 5 phút; WebDAV thủ công vẫn hoạt động độc lập.
-
-Chi tiết byte-level và endpoint: [BizTransfer v1](./BIZTRANSFER_PROTOCOL.md).
-
-## Thành phần hệ thống
+## Thành phần
 
 ### Firmware
 
-CrossPoint/BizReader tiếp tục là lõi đọc sách. `BizHubActivity` sẽ là điểm vào
-cho các mini-app, còn `BizSyncService` chịu trách nhiệm:
+- Lõi thư viện/EPUB kế thừa CrossPoint Reader.
+- `BizHubActivity` hiển thị ghi chú, task, lịch, thời tiết và trạng thái nền nghỉ.
+- `BizContentStore` lưu snapshot JSON trong `/.crosspoint/bizsync/content.json`.
+- `BizReadingProgressStore` lưu tiến độ theo tên tệp trong cùng thư mục.
+- `BizTransferService` quảng bá GATT, xử lý BLE Sync v2 và mở HTTP theo yêu cầu.
+- `BizBookUploadHandler` nhận tệp vào `.part`, kiểm tra SHA-256 rồi mới hoàn tất.
+- `OtaUpdater` chỉ nhận `firmware.bin` từ GitHub Release của BizReader; release
+  tag `vX.Y.Z` được đóng gói cho profile LilyGo cùng checksum và mã nguồn tương
+  ứng.
 
-- REST API trong LAN.
-- Kho dữ liệu JSON trên thẻ nhớ.
-- Hàng đợi thay đổi khi ngoại tuyến.
-- BLE discovery và kích hoạt phiên BizTransfer bằng Wi-Fi đã lưu.
-- Kích hoạt làm mới màn hình khi có nội dung mới.
+### Android
 
-### Ứng dụng Android
+- Flutter quản lý Tổng quan, Thư viện, Tiện ích và Thiết bị.
+- EPUB được nhập vào vùng dữ liệu riêng của App và đọc bằng `epub_view`.
+- `BizTransferBleClient` kéo snapshot, hợp nhất theo `updatedAt`, đẩy snapshot
+  kết quả về máy và đọc lại để xác nhận.
+- `WebDavDeviceClient` dùng token BizTransfer hoặc cấu hình WebDAV thủ công để
+  truyền tệp lớn.
+- Viewer Android native kế thừa Gander, xử lý tài liệu cục bộ trong WebView bị
+  giới hạn về host asset nội bộ.
 
-Flutter dùng một codebase cho Android trước, sau đó có thể mở rộng iOS:
+## Luồng BLE Sync v2
 
-- Thiết bị và trạng thái kết nối.
-- Thư viện EPUB, trình đọc cục bộ và WebDAV.
-- Tiến độ đọc cục bộ và đồng bộ thủ công với BizReader.
-- Trình xem ngoại tuyến PDF, Office Open XML, bảng tính, Markdown, text/code,
-  ảnh, âm thanh và video, tích hợp từ Gander theo giấy phép MIT.
-- Trình soạn Notes/Todo/Calendar.
-- Chuẩn hóa ảnh về 960 x 540 và dithering.
-- Cấu hình Clock/Weather/wallpaper.
-- Giọng nói trên điện thoại.
-- OTA và chẩn đoán.
+1. Người dùng mở **Truyền tệp > Kết nối App** trên máy đọc.
+2. Firmware bật BLE với service UUID BizReader; không bonding/passkey.
+3. App gửi `sync_pull` và đọc snapshot theo các frame có sequence/total.
+4. App hợp nhất ghi chú, task, tombstone và tiến độ theo stable ID/tên tệp cùng
+   `updatedAt`. Lịch, thời tiết và chế độ nền nghỉ do App quản lý.
+5. App gửi `sync_begin`, lần lượt ghi frame và kết thúc bằng `sync_commit`.
+6. Firmware chỉ commit khi đủ frame đúng thứ tự, validate toàn bộ JSON rồi trả
+   snapshot đã lưu để App xác nhận.
+7. Disconnect, Back hoặc timeout hủy phiên và giải phóng buffer.
 
-Trình xem đa định dạng chỉ chạy trong App Android. Nó không thay đổi các định
-dạng mà firmware e-paper đọc trực tiếp; EPUB vẫn đi qua thư viện và luồng đồng
-bộ tiến độ BizReader hiện có.
+Giới hạn snapshot là 48 KiB, tối đa 40 ghi chú, 60 task, 60 sự kiện, 80/120
+tombstone và 100 bản ghi tiến độ. Danh sách bị giới hạn phải giữ các mục mới
+nhất. Sách, ảnh và firmware không đi trong snapshot BLE.
 
-### Đồng bộ
+## Luồng truyền sách/ảnh
 
-LAN là đường mặc định và không cần tài khoản. Cloud relay là thành phần tùy
-chọn cho điều khiển từ xa và nhiều người dùng; firmware không phụ thuộc cloud
-để đọc sách hoặc xem nội dung đã đồng bộ.
+1. App gửi lệnh BLE `start`.
+2. Firmware chỉ dùng SSID/mật khẩu đã lưu trên máy đọc để nối Wi-Fi.
+3. Firmware tạo token ngẫu nhiên theo phiên, trả IP, port và token qua BLE.
+4. App gửi tệp bằng HTTP kèm token, `Content-Length` và SHA-256.
+5. Firmware stream vào `.part`; chỉ đổi tên sau khi kích thước và hash khớp.
+6. App gửi `stop`; firmware tắt HTTP/Wi-Fi. Phiên bỏ quên cũng tự hết hạn.
 
-## Lưu trữ trên thẻ nhớ
+WebDAV vẫn là luồng riêng, dùng được không cần App. App không đọc hoặc vận chuyển
+mật khẩu Wi-Fi đã lưu trên máy đọc.
+
+## Dữ liệu trên thiết bị
 
 ```text
-/Ebook/
-/.crosspoint/bizsync/  # tiến độ đọc EPUB dùng cho App
-/.bizreader/
-  device.json
-  notes.json
-  todos.json
-  calendar.json
-  weather.json
-  dashboard.json
-  sync-journal.jsonl
-  media/
-  wallpapers/
+/Ebook/                         # sách của người dùng
+/sleep.bmp                      # ảnh nền nghỉ tùy chọn
+/.crosspoint/bizsync/
+  content.json                  # notes/tasks/events/weather/sleep + tombstones
+  <fnv1a>.json                  # tiến độ theo filename
 ```
 
-Mỗi bản ghi đồng bộ có:
+Mỗi file store dùng ghi tạm/backup để giảm nguy cơ mất điện giữa lúc thay thế.
+Tuy nhiên, `content.json` và nhiều file tiến độ chưa tạo thành một transaction
+xuyên file: nếu thẻ SD lỗi giữa vòng commit, snapshot có thể chỉ được áp dụng một
+phần và App phải đồng bộ lại. Sách cá nhân trong `Ebook/` không thuộc mã nguồn và
+phải nằm ngoài Git.
 
-```json
-{
-  "id": "uuid",
-  "revision": 12,
-  "updatedAt": "2026-07-30T10:30:00Z",
-  "actorId": "phone-or-device-id",
-  "deleted": false
-}
-```
+## Bảo mật và riêng tư
 
-Notes dùng last-write-wins theo từng bản ghi. Todo và Calendar giữ tombstone
-cho thao tác xóa để thiết bị ngoại tuyến không làm sống lại dữ liệu cũ.
+- BLE mở không ghép đôi là quyết định sản phẩm; ranh giới tin cậy là thao tác
+  người dùng mở màn hình kết nối và khoảng cách gần.
+- Token HTTP ngẫu nhiên chỉ tồn tại trong phiên và được so sánh constant-time.
+- Upload từ xa không được ghi trực tiếp vào tên đích trước khi xác minh.
+- Không có tài khoản, analytics hay máy chủ BizReader trung gian.
+- Tên thành phố/tọa độ dự báo chỉ được gửi tới Open-Meteo khi người dùng bấm cập
+  nhật tự động; xem [chính sách quyền riêng tư](../PRIVACY_POLICY.md).
 
-## BizSync API v1
+## Giới hạn kiểm chứng
 
-Các endpoint chạy cùng web server hiện có:
+Unit test và build chứng minh mã biên dịch và logic host đã chạy, nhưng không
+chứng minh màn hình, cảm ứng, nút, thẻ nhớ, BLE radio hoặc Wi-Fi trên máy thật.
+Release chỉ đạt khi đã UAT đúng board với các tình huống ngắt BLE giữa frame,
+SD đầy/mất điện, sách lớn, tiếng Việt, sleep/wake và quay lại từ mọi màn hình.
 
-| Method | Endpoint | Mục đích |
-| --- | --- | --- |
-| `GET` | `/api/v1/device` | Tên, MAC, phiên bản, pin, SD, khả năng |
-| `GET` | `/api/v1/sync?since=<rev>` | Lấy thay đổi sau revision |
-| `POST` | `/api/v1/sync` | Đẩy một lô thay đổi |
-| `POST` | `/api/v1/display/activate` | Mở mini-app hoặc wallpaper |
-| `POST` | `/api/v1/wifi` | Cấu hình Wi-Fi qua phiên LAN đã xác thực |
-| `POST` | `/api/v1/ota/check` | Kiểm tra bản firmware |
-| `POST` | `/api/v1/ota/install` | Cài bản đã xác thực |
-
-BizTransfer HTTP hoặc WebDAV tiếp tục đảm nhiệm tệp lớn. JSON sync không mang
-dữ liệu EPUB hoặc ảnh nhị phân trong body.
-
-## BLE
-
-BLE chỉ quảng bá khi người dùng mở **Truyền tệp > Kết nối App**. BLE tự tắt khi
-thoát màn hình, thiết bị ngủ hoặc sau 5 phút không có phiên truyền.
-GATT cung cấp:
-
-- Device identity và trạng thái phiên.
-- Lệnh mở Wi-Fi đã lưu, không truyền SSID hoặc mật khẩu.
-- URL LAN và token ngắn hạn sau khi kết nối thành công.
-
-Truyền ảnh/sách lớn qua Wi-Fi hoặc WebDAV, không đẩy qua BLE. Có thể dùng các
-phần tương thích của OpenDisplay service `0x2446` cho ảnh cục bộ, nhưng không
-được làm thay đổi giao thức BizSync hay buộc firmware vào OpenDisplay.
-
-## Bảo mật
-
-- BLE không bonding; khoảng cách gần là ranh giới tin cậy của BizTransfer v1.
-- Token LAN được tạo mới cho từng phiên và hết hiệu lực khi phiên dừng.
-- Không đưa mật khẩu Wi-Fi, token cloud hoặc thông tin đăng nhập vào log.
-- OTA phải kiểm tra manifest, kích thước và SHA-256 trước khi đổi partition.
-- Không truyền access token Codex/OpenAI xuống thiết bị.
-- Cloud relay, nếu bật, dùng TLS và token riêng cho từng thiết bị.
-
-## Trình tự triển khai
-
-1. **BizTransfer v1 (đã có):** BLE mở Wi-Fi, token phiên, gửi sách có SHA-256
-   và đồng bộ thủ công vị trí đọc EPUB.
-2. **BizSync local:** API thiết bị, Notes, Todo và calendar wallpaper.
-3. **Media:** ảnh, dithering, theme Clock/Weather và wallpaper.
-4. **BLE mở rộng:** đổi tên thiết bị, quyền truy cập tùy chọn và chẩn đoán mạng.
-5. **Remote sync:** relay tùy chọn, nhiều thiết bị và thông báo.
-6. **Voice/OTA:** giọng nói trên Android, OTA từ ứng dụng và theo dõi lỗi.
-
-## Nguồn tham khảo
-
-- [reTerminal Sticky docs](https://www.seeedstudio.com/sticky/docs/en/quick-start/)
-- [Sticky hardware overview](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/)
-- [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)
-- [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android)
-- [Gander](https://github.com/mokshablr/gander) (MIT)
-- [epub_view for Flutter](https://pub.dev/packages/epub_view)
-- [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk)
-- [Sticky Reminders](https://github.com/Free-Ink/sticky-reminders) (MIT)
-- [OpenDisplay protocol](https://opendisplay.org/protocol/index.html)
+Chi tiết wire contract nằm tại [BIZTRANSFER_PROTOCOL.md](BIZTRANSFER_PROTOCOL.md).

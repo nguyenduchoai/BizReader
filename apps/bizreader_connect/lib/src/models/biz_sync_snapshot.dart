@@ -7,10 +7,65 @@ class BizSyncSnapshot {
   final BizContent content;
   final List<DeviceReadingProgress> progress;
 
+  static List<DeviceReadingProgress> _boundedProgress(
+    Iterable<DeviceReadingProgress> values,
+  ) {
+    final newestByFilename = <String, DeviceReadingProgress>{};
+    for (final value in values) {
+      if (value.filename.isEmpty) continue;
+      final previous = newestByFilename[value.filename];
+      if (previous == null || value.updatedAt > previous.updatedAt) {
+        newestByFilename[value.filename] = value;
+      }
+    }
+    final newest = newestByFilename.values.toList()
+      ..sort((a, b) {
+        final timestamp = b.updatedAt.compareTo(a.updatedAt);
+        return timestamp != 0 ? timestamp : a.filename.compareTo(b.filename);
+      });
+    return newest.take(100).toList(growable: false);
+  }
+
+  static List<DeviceReadingProgress> mergeProgress(
+    List<DeviceReadingProgress> local,
+    List<DeviceReadingProgress> remote,
+  ) {
+    bool hasReadingPosition(DeviceReadingProgress item) =>
+        item.percentage > 0 || item.spineIndex > 0 || item.pageNumber > 0;
+
+    final merged = <String, DeviceReadingProgress>{};
+    for (final item in remote) {
+      if (item.filename.isNotEmpty) merged[item.filename] = item;
+    }
+    for (final item in local) {
+      final previous = merged[item.filename];
+      final preserveLegacyDevicePosition =
+          previous != null &&
+          previous.updatedAt == 0 &&
+          hasReadingPosition(previous) &&
+          !hasReadingPosition(item);
+      if (!preserveLegacyDevicePosition &&
+          (previous == null || item.updatedAt > previous.updatedAt)) {
+        merged[item.filename] = DeviceReadingProgress(
+          filename: item.filename,
+          percentage: item.percentage,
+          spineIndex: item.spineIndex,
+          pageNumber: item.pageNumber,
+          pageCount: item.pageCount,
+          pending: true,
+          updatedAt: item.updatedAt,
+        );
+      }
+    }
+    return _boundedProgress(merged.values);
+  }
+
   Map<String, Object?> toJson() => {
     'protocol': 2,
     'content': content.toJson(),
-    'progress': progress.take(100).map((item) => item.toJson()).toList(),
+    'progress': _boundedProgress(
+      progress,
+    ).map((item) => item.toJson()).toList(),
   };
 
   factory BizSyncSnapshot.fromJson(Map<String, Object?> json) {
@@ -24,14 +79,12 @@ class BizSyncSnapshot {
     }
     return BizSyncSnapshot(
       content: BizContent.fromJson(content.cast<String, Object?>()),
-      progress: progress
-          .whereType<Map>()
-          .map(
-            (item) =>
-                DeviceReadingProgress.fromJson(item.cast<String, Object?>()),
-          )
-          .where((item) => item.filename.isNotEmpty)
-          .toList(),
+      progress: _boundedProgress(
+        progress.whereType<Map>().map(
+          (item) =>
+              DeviceReadingProgress.fromJson(item.cast<String, Object?>()),
+        ),
+      ),
     );
   }
 }

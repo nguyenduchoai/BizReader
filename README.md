@@ -1,292 +1,168 @@
-# CrossPoint Reader
-
-[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
-
-CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
-
-## BizReader Platform
-
-Nhánh BizReader bổ sung ứng dụng Android để quản lý LilyGo T5 EPD47 mà không
-loại bỏ trình đọc sách, WebDAV hoặc Calibre hiện có:
-
-- [BizReader Connect cho Android](./apps/bizreader_connect/README.md)
-- [Kiến trúc App, firmware và đồng bộ BizSync](./docs/BIZREADER_PLATFORM.md)
-- [Giao thức BLE Sync v2 + Wi-Fi BizTransfer](./docs/BIZTRANSFER_PROTOCOL.md)
-
-BizTransfer cho phép App lưu thiết bị BLE, yêu cầu thiết bị tự kết nối Wi-Fi đã lưu và
-stream sách vào `/Ebook` trên thẻ SD. Firmware xác minh SHA-256 trước khi hoàn
-tất file. App cũng nhập/đọc EPUB, có dữ liệu demo và đồng bộ BLE hai chiều cho
-tiến độ đọc, ghi chú và việc cần làm; WebDAV truyền thống vẫn là phương án dự phòng.
-
-BizReader App 0.6 có các mô-đun ghi chú, việc cần làm, lịch, thời tiết và ảnh
-nền nghỉ. Nút đồng bộ dùng BLE, không bật Wi-Fi, và hợp nhất thay đổi theo thời
-gian cập nhật. Việc cần làm có thể đánh dấu ngay trên thiết bị rồi đồng bộ về
-điện thoại. Ảnh được đổi sang BMP 960 x 540 và có nút gửi Wi-Fi riêng; nền lịch
-hiển thị giờ, ngày, thời tiết và ba sự kiện sắp tới. Trên thiết bị, mở **Tiện ích
-BizReader** từ trang chủ để xem dữ liệu.
-App cũng tích hợp trình xem ngoại tuyến từ Gander để mở PDF, Office Open XML,
-bảng tính, Markdown, văn bản/mã nguồn, ảnh, âm thanh và video. EPUB tiếp tục đi
-qua thư viện BizReader để giữ luồng đọc và đồng bộ tiến độ hiện có.
-
-**Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
-
-![CrossPoint Reader running on Xteink device](./docs/images/cover.jpg)
-
-## What can CrossPoint do?
-
-- **Reader engine**: EPUB 2/3 rendering with embedded-style option, image handling, hyphenation, kerning, chapter navigation, footnotes, bookmarks, go-to-percent, auto page turn, orientation control, focus reading, KOReader progress sync and more. 
-
-- **Various formats**: native handling for `.epub`, `.xtc/.xtch`, `.txt`, and `.bmp`.
-
-- **Screenshots.**
-
-- **Custom fonts**: install your favorite fonts on the SD card.
-
-- **Tilt page turn (X3 only)**.
-
-- **Library workflow**: folder browser, hidden-file toggle, long-press delete, recent books, SD-cache management.
-
-- **Wireless workflows**:
-  
-  - File transfer web UI
-  - EPUB Optimizer
-  - Web settings UI/API (edit many device settings from browser)
-  - WebSocket fast uploads
-  - WebDAV handler
-  - AP mode (hotspot) and STA mode (join existing Wi-Fi), both with QR helpers
-  - Calibre wireless connect flow
-  - OPDS browser with saved servers (up to 8), search, pagination, and direct download
-  - OTA update checks and installs from GitHub releases
-
-- **Customization**: multiple themes (Classic, Lyra, Lyra Extended, RoundedRaff), sleep screen modes, front/side button remapping, status bar controls, power-button behavior, refresh cadence, and more.
-
-- **Localization**: 24 UI languages and counting. RTL support.
-
-### Coming soon:
-
-- Dictionary lookup — inline word lookup without leaving the reader.
-
-- More themes.
-
-- Much more! stay tuned.
-
----
-
-## USB-locked devices (Xteink Unlocker)
-
-Some Xteink units purchased from third-party stores (e.g. AliExpress) ship with USB flashing locked from the factory.
-If your device is locked, you will need to use the **Xteink Unlocker** tool available at
-https://crosspointreader.com/#unlock-tool before you can flash CrossPoint.
-
-**You do not need this tool if you bought your device directly from xteink.com.** Those units are not locked.
-
-**Not sure if your device is locked?** Power it on, connect the USB-C cable, and try flashing via the web flasher first (see
-[Install firmware](#install-firmware) below). If the browser's serial device picker does not show your device, try a different
-USB port or browser before assuming the device is locked. Only reach for the unlocker if the device still doesn't appear.
-
-> ### ⚠️ WARNING: READ THIS BEFORE USING THE UNLOCKER ⚠️
-> 
-> **The only officially supported firmwares in the unlock tool are CrossPoint and CrossInk.**
-> 
-> Flashing any other firmware on a USB-locked device may **permanently brick the device** or leave it **permanently
-> stuck on that firmware with no recovery path**. Once USB flashing is re-locked, your only way back is via OTA, and if
-> the firmware you flashed doesn't support OTA, **there is no way out**.
-
-## Install firmware
-
-### Web installer (recommended)
-
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Go to https://crosspointreader.com/#flash-tools, select device (X3 or X4), and choose an official CrossPoint release.
-
-### Web installer (specific version)
-
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Download a `firmware.bin` from [Releases](https://github.com/crosspoint-reader/crosspoint-reader/releases), local build, or continuous integration artifact.
-3. Go to https://crosspointreader.com/#flash-tools, select device (X3 or X4), click "Custom .bin" and upload a `firmware.bin`.
-
-### Revert to Official Firmware
-
-To revert to the official firmware, you can also flash the latest official firmware using https://crosspointreader.com/#flash-tools.
-
-### Command line
-
-1. Install [`esptool`](https://github.com/espressif/esptool):
-
-```bash
-pip install esptool
-```
-
-2. Download `firmware.bin` from the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases).
-3. Connect your device via USB-C.
-4. Find the device port. On Linux, run `dmesg` after connecting. On macOS:
-
-```bash
-log stream --predicate 'subsystem == "com.apple.iokit"' --info
-```
-
-5. Flash:
-
-```bash
-esptool.py --chip esp32c3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
-```
-
-Adjust `/dev/ttyACM0` to match your system.
-
-### Manual
-
-See [Development quick start](#development-quick-start) below.
-
----
-
-## Custom SD-card fonts
-
-Convert your own TTF/OTF files into `.cpfont` files that load from the SD card. No firmware reflash is needed.
-
-1. Go to https://crosspointreader.com/fonts and open the "SD-card font builder" form.
-2. Upload up to four styles (regular, bold, italic, bold-italic), set the family name, point sizes, and Unicode range.
-3. Download the generated `.cpfont` files.
-4. Copy them to your SD card under `/fonts/YourFont/` (or `/.fonts/YourFont/` to hide the folder).
-5. Select the font on the device from the font settings.
-
-Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` script unmodified, so output matches a local host build.
-
----
-
-## Documentation
-
-- [User Guide](./USER_GUIDE.md)
-- [Web server usage](./docs/webserver.md)
-- [Web server endpoints](./docs/webserver-endpoints.md)
-- [Project scope](./SCOPE.md)
-- [Contributing docs](./docs/contributing/README.md)
-
----
-
-## Development quick start
-
-### Prerequisites
-
-- [pioarduino](https://github.com/pioarduino/pioarduino) or VS Code + pioarduino plugin
-- Python 3.8+
-- `clang-format` 21
-- USB-C cable supporting data transfer
-
-### Setup
-
-```bash
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
-cd crosspoint-reader
-
-# if cloned without --recursive:
-git submodule update --init --recursive
-```
-
-### Build / flash / monitor
-
-```bash
-pio run --target upload
-```
-
-### Contributor pre-PR checks
-
-```bash
-./bin/clang-format-fix
-pio check -e default
-pio run -e default
-```
-
-### Debugging
-
-After flashing the new features, it’s recommended to capture detailed logs from the serial port.
-
-First, make sure all required Python packages are installed:
-
-```python
-python3 -m pip install pyserial colorama matplotlib
-```
-
-After that run the script:
-
-```sh
-# For Linux
-# This was tested on Debian and should work on most Linux systems.
-python3 scripts/debugging_monitor.py
-
-# For macOS
-python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
-```
-
-Minor adjustments may be required for Windows.
-
----
-
-## Internals
-
-CrossPoint Reader is pretty aggressive about caching data down to the SD card to minimise RAM usage. The ESP32-C3 only has ~380KB of usable RAM, so we have to be careful. A lot of the decisions made in the design of the firmware were based on this constraint.
-
-### Data caching
-
-The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
-cache. This cache directory exists at `.crosspoint` on the SD card. The structure is as follows:
+# BizReader
+
+BizReader là nền tảng đọc sách cho **LilyGo T5 ePaper S3 / T5S3 4.7 inch
+(EPD47 v2.4, ESP32-S3 N16R8)**, gồm firmware trên máy đọc và ứng dụng Android
+đồng hành. Dự án kế thừa lõi đọc EPUB của
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), sau
+đó bổ sung giao diện tiếng Việt, cảm ứng GT911, phím người dùng/nguồn, màn hình
+nghỉ và đồng bộ BizReader.
+
+Tên hiển thị trên thiết bị là **BizReader**; phần thông tin và màn hình nghỉ ghi
+**Hoài Nguyễn**.
+
+## Chức năng
+
+### Trên máy đọc
+
+- Đọc EPUB 2/3, TXT, XTC, XTCH và BMP từ thẻ nhớ.
+- Thư viện, sách gần đây, dấu trang, mục lục, tìm kiếm và tùy chỉnh kiểu đọc.
+- Cảm ứng trực tiếp cho quay lại, chọn, cuộn và chuyển trang. Profile EPD47 v2.4
+  chỉ dùng KEY GPIO21 làm nguồn/đánh thức; BOOT và RESET không phải nút điều
+  hướng của ứng dụng.
+- Giao diện và font tiếng Việt.
+- Tiện ích ghi chú, việc cần làm, lịch, thời tiết và nền nghỉ.
+- Nền nghỉ dạng lịch hoặc ảnh `sleep.bmp`.
+- Web, WebDAV, Calibre và OPDS của lõi đọc vẫn được giữ làm phương án dự phòng.
+
+### Trên Android
+
+- Mở thẳng vào Tổng quan; kết nối thiết bị là một chức năng trong tab Thiết bị,
+  không phải bước bắt buộc để dùng App.
+- Nhập và đọc EPUB, lưu tiến độ cục bộ và đồng bộ với máy đọc.
+- Quản lý ghi chú, việc cần làm, lịch, thời tiết và nền nghỉ.
+- Mở ngoại tuyến PDF, DOCX, XLSX/XLS/XLSM/XLSB/CSV/ODS, PPTX, Markdown,
+  văn bản/mã nguồn, ảnh, âm thanh và video.
+- Có chế độ demo để kiểm tra giao diện mà không cần máy đọc.
+
+## Cơ chế đồng bộ
+
+BizReader tách dữ liệu nhỏ và tệp lớn để giữ BLE nhanh, ổn định và tiết kiệm pin:
+
+1. Trên máy đọc, mở **Truyền tệp > Kết nối App**. BLE chỉ bật trong màn hình
+   này và tắt khi bấm Back hoặc hết thời gian.
+2. App tìm thiết bị ở gần và kết nối BLE, không yêu cầu ghép đôi hay mã PIN.
+3. Tiến độ đọc, ghi chú, việc cần làm, lịch, thời tiết và cấu hình nền nghỉ được
+   hợp nhất hai chiều bằng BLE Sync v2.
+4. Sách và ảnh nền được gửi bằng HTTP qua Wi-Fi. App chỉ yêu cầu máy đọc dùng
+   mạng đã lưu; App không nhận hoặc lưu mật khẩu Wi-Fi của máy đọc.
+5. Firmware ghi tệp `.part`, kiểm tra kích thước và SHA-256 rồi mới đổi tên vào
+   `/Ebook`. WebDAV tiếp tục hoạt động độc lập khi không dùng App.
+
+BLE không ghép đôi là chủ ý sản phẩm. Trong thời gian màn hình **Kết nối App**
+đang mở, một ứng dụng tương thích ở gần có thể đọc/ghi dữ liệu đồng bộ; không
+nên để màn hình này mở lâu ở nơi công cộng.
+
+Chi tiết kỹ thuật:
+
+- [Kiến trúc nền tảng](docs/BIZREADER_PLATFORM.md)
+- [Giao thức BLE Sync v2 và BizTransfer](docs/BIZTRANSFER_PROTOCOL.md)
+- [Ứng dụng Android](apps/bizreader_connect/README.md)
+- [Quyền riêng tư](PRIVACY_POLICY.md)
+
+## Chuẩn bị thẻ nhớ
+
+Tạo thư mục sau trên thẻ microSD:
 
 ```text
-.crosspoint/
-├── epub_<hash>/         # one directory per book, named by content hash
-│   ├── progress.bin     # reading position (chapter, page, etc.)
-│   ├── cover.bmp        # generated cover image
-│   ├── book.bin         # metadata: title, author, spine, TOC
-│   ├── css_rules.cache  # parsed CSS rule cache
-│   ├── img_*            # rendered image cache files
-│   └── sections/        # per-chapter layout cache
-│       ├── 0.bin
-│       ├── 1.bin
-│       └── ...
-├── settings.json        # device settings
-├── state.json           # resume/runtime state
-└── recent.json          # recent books list
+/Ebook
 ```
 
-Removing `/.crosspoint` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
+Sách cá nhân trong `Ebook/` là dữ liệu cục bộ và không được đưa lên Git. Dữ liệu
+vận hành của firmware được lưu dưới `/.crosspoint/` trên thẻ.
 
-For more details on the internal file structures, see the [file formats document](./docs/file-formats.md).
+## Build firmware LilyGo
 
----
+Yêu cầu PlatformIO Core tương thích với `platformio.ini` và submodule đã được
+lấy đầy đủ:
 
-## Contributing
+```bash
+git submodule update --init --recursive
+pio run -e lilygo
+```
 
-Contributions are welcome. If you're new to the codebase, start with the [contributing docs](./docs/contributing/README.md). For things to work on, check the [ideas discussion board](https://github.com/crosspoint-reader/crosspoint-reader/discussions/categories/ideas) — leave a comment before starting so we don't duplicate effort.
+Build bản phát hành:
 
-Everyone here is a volunteer, so please be respectful and patient. For governance and community expectations, see [GOVERNANCE.md](./GOVERNANCE.md).
+```bash
+pio run -e lilygo_release
+```
 
----
+Flash bằng PlatformIO để tool tự dùng đúng bootloader, partition và địa chỉ cho
+ESP32-S3:
 
-## Community forks
+```bash
+pio run -e lilygo -t upload --upload-port /dev/cu.usbmodemXXXX
+pio device monitor --baud 115200 --port /dev/cu.usbmodemXXXX
+```
 
-One of the best things about open source is that anyone can take the code in a different direction. If you need something outside CrossPoint's [scope](./SCOPE.md), check out the community forks:
+Không dùng lệnh flash ESP32-C3 hoặc địa chỉ cố định từ tài liệu CrossPoint/Xteink
+cho LilyGo. Nếu máy không hiện cổng serial, giữ nút BOOT, bấm RESET rồi thả BOOT
+để vào chế độ tải firmware.
 
-- [CrossInk](https://github.com/uxjulia/CrossInk) — Typography and reading tracking: Bionic Reading (bolds word stems to create fixation points), guide dots between words, improved paragraph indents, and replaces the default fonts with ChareInk/Lexend/Bitter.
+Artifact của bản release nằm trong:
 
-- [papyrix-reader](https://github.com/bigbag/papyrix-reader) — Adds FB2 and MD format support. Actively maintained with Arabic script support. Custom themes via SD card.
+```text
+.pio/build/lilygo_release/
+```
 
-- ~~[crosspet](https://github.com/trilwu/crosspet) — A Vietnamese fork that adds a Tamagotchi-style virtual chicken that grows based on your reading milestones (pages read, streaks, care). Also: Flashcards, Weather, Pomodoro timer, and mini-games.~~ (Unmaintained)
+Tag phiên bản dạng `vX.Y.Z` trên commit mới nhất của `main`, khớp với trường
+`version` trong `platformio.ini`, sẽ build đúng profile LilyGo và tạo GitHub
+Release có `firmware.bin`, checksum, giấy phép cùng gói mã nguồn tương ứng. Menu
+cập nhật trên thiết bị chỉ kiểm tra release của repo BizReader này.
 
-- [crosspoint-reader-cjk](https://github.com/aBER0724/crosspoint-reader-cjk) — Purpose-built for Chinese, Japanese, and Korean reading.
+Gói `*-source.tar.gz` chứa đúng source snapshot của bản build, gồm các patch đã
+áp dụng cho dependency, platform/framework và nguồn để tạo các thư viện ESP-IDF
+được link vào firmware. Asset của một tag đã phát hành là bất biến; muốn phát
+hành lại phải tăng phiên bản và tạo tag mới.
 
-- [inx](https://github.com/obijuankenobiii/inx) — Completely reimagines the user interface with tabbed navigation.
+## Build ứng dụng Android
 
-- ~~[PlusPoint](https://github.com/ngxson/pluspoint-reader) — custom JS apps support.~~ (Unmaintained)
+```bash
+cd apps/bizreader_connect
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
 
-- [crosspoint-reader-papers3](https://github.com/juicecultus/crosspoint-reader-papers3) — Crosspoint port for M5Stack Paper S3. 
+APK debug dùng để cài thử cục bộ. Bản đưa lên Google Play phải có
+`android/key.properties` và upload keystore hợp lệ, sau đó build:
 
-- [t5s3-reader](https://github.com/ShallowGreen123/t5s3-reader) — Crosspoint port for LilyGo T5 ePaper S3 / T5S3 4.7-inch e-paper device.
+```bash
+flutter build appbundle --release
+```
 
-**Note:** Many of these features will make their way into CrossPoint over time. We maintain a slower pace to ensure rock-solid stability and squash bugs before they reach your device.
+Keystore, `key.properties`, APK/AAB và thông tin đăng nhập không được commit.
+Quy trình release phải dừng nếu thiếu khóa; không dùng bản ký debug để phát hành
+Public.
 
-Want to build your own device? Be sure to check out the [de-link](https://github.com/iandchasse/de-link) project.
+## Kiểm tra trước phát hành
 
----
+```bash
+cmake -S test -B build/test -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/test
+ctest --test-dir build/test --output-on-failure
 
-CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.
+cd apps/bizreader_connect
+flutter analyze
+flutter test
+cd android
+./gradlew :app:lintRelease
+```
 
-Huge shoutout to [diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader), which inspired this project.
+Build và unit test không thay thế kiểm tra trên thiết bị thật. Trước khi phát
+hành cần xác nhận ít nhất: khởi động, cảm ứng, các nút vật lý có thể dùng ở
+revision phần cứng thực tế, mở EPUB tiếng
+Việt, lưu/khôi phục tiến độ, BLE ngắt giữa chừng, đồng bộ hai chiều, gửi sách
+lớn qua Wi-Fi, nền nghỉ và quay lại từ mọi màn hình.
+
+## Nguồn và giấy phép
+
+- Mã nguồn thuộc phạm vi [LICENSE](LICENSE) của repository được phát hành theo
+  MIT. Binary firmware LilyGo có liên kết driver GPL-3.0, vì vậy phải kèm giấy
+  phép và mã nguồn tương ứng như mô tả trong
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Driver màn hình dùng
+  [LilyGo-EPD47](https://github.com/Xinyuan-LilyGO/LilyGo-EPD47).
+- Trình xem đa định dạng Android có thành phần kế thừa Gander theo giấy phép MIT;
+  thông tin bên thứ ba nằm trong thư mục ứng dụng.
+- BizReader không phải sản phẩm chính thức của LilyGo hay CrossPoint Reader.

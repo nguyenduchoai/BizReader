@@ -169,7 +169,9 @@ void MappedInputManager::serviceTouchGestures() const {
 
   // Clear the long-press latch once the contact ends, arming the next contact.
   const bool released = gpio.wasTouchReleased();
+#ifdef TOUCH_PROBE_DEBUG
   const bool hadLongPressLatch = longPressLatched;
+#endif
   if (released) {
     longPressLatched = false;
   }
@@ -274,8 +276,8 @@ bool MappedInputManager::routeTouchHintTap(const float panelX, const float panel
     case TouchHintAction::None:
       break;
   }
-  LOG_DBG("TOUCH", "footer tap slot=%d action=%u portrait=(%.3f,%.3f)", slot, static_cast<unsigned>(action),
-          portraitX, portraitY);
+  LOG_DBG("TOUCH", "footer tap slot=%d action=%u portrait=(%.3f,%.3f)", slot, static_cast<unsigned>(action), portraitX,
+          portraitY);
   return true;
 }
 
@@ -409,8 +411,7 @@ MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const
     return TouchHintAction::None;
   };
 
-  constexpr uint8_t kFrontButtons[] = {HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM, HalGPIO::BTN_LEFT,
-                                       HalGPIO::BTN_RIGHT};
+  constexpr uint8_t kFrontButtons[] = {HalGPIO::BTN_BACK, HalGPIO::BTN_CONFIRM, HalGPIO::BTN_LEFT, HalGPIO::BTN_RIGHT};
   for (size_t i = 0; i < touchHintActions.size(); ++i) {
     touchHintActions[i] = actionForHardware(kFrontButtons[i]);
   }

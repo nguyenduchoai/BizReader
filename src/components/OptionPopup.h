@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -46,8 +47,7 @@ class OptionPopup {
     active = true;
   }
 
-  bool handleInput(MappedInputManager& input, const GfxRenderer& renderer,
-                   const std::function<void()>& requestUpdate) {
+  bool handleInput(MappedInputManager& input, const GfxRenderer& renderer, const std::function<void()>& requestUpdate) {
     if (!active) return false;
 
     const int count = static_cast<int>(ownedStrings.size());
@@ -119,20 +119,19 @@ class OptionPopup {
     const int titleLineHeight = renderer.getLineHeight(UI_12_FONT_ID);
     const int rowHeight = optionLineHeight + metrics.optionPopupSelectionVPadding * 2;
 
-    int maxTextWidth = renderer.getTextWidth(UI_12_FONT_ID, title.c_str(), EpdFontFamily::BOLD);
-    for (const auto& option : ownedStrings) {
-      maxTextWidth = std::max(maxTextWidth, renderer.getTextWidth(optionFontId, option.c_str(), optionStyle));
-    }
+    const int titleWidth = renderer.getTextWidth(UI_12_FONT_ID, title.c_str(), EpdFontFamily::BOLD);
+    const int maxTextWidth = std::accumulate(
+        ownedStrings.begin(), ownedStrings.end(), titleWidth, [&](const int width, const std::string& option) {
+          return std::max(width, renderer.getTextWidth(optionFontId, option.c_str(), optionStyle));
+        });
 
     const int count = static_cast<int>(ownedStrings.size());
     const int listHeight = rowHeight * count + metrics.optionPopupItemSpacing * (count - 1);
-    const int dialogWidth =
-        std::min((maxTextWidth + metrics.optionPopupInnerPadding * 2 +
-                  metrics.optionPopupSelectionHPadding * 2) *
-                     12 / 10,
-                 pageWidth - metrics.optionPopupDialogSideMargin * 2);
-    const int dialogHeight = titleLineHeight + metrics.optionPopupTitleGap + listHeight +
-                             metrics.optionPopupInnerPadding * 2;
+    const int dialogWidth = std::min(
+        (maxTextWidth + metrics.optionPopupInnerPadding * 2 + metrics.optionPopupSelectionHPadding * 2) * 12 / 10,
+        pageWidth - metrics.optionPopupDialogSideMargin * 2);
+    const int dialogHeight =
+        titleLineHeight + metrics.optionPopupTitleGap + listHeight + metrics.optionPopupInnerPadding * 2;
     const int dialogX = (pageWidth - dialogWidth) / 2;
     const int dialogY = (pageHeight - dialogHeight) / 2;
     const int itemX = dialogX + metrics.optionPopupInnerPadding;

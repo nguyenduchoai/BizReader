@@ -8,7 +8,6 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/biz_transfer_status.dart';
 import '../models/biz_sync_snapshot.dart';
 import '../models/biz_content.dart';
-import '../models/device_reading_progress.dart';
 import 'ble_sync_codec.dart';
 
 class BizTransferException implements Exception {
@@ -22,6 +21,9 @@ class BizTransferException implements Exception {
 
 class BizTransferBleClient {
   BizTransferBleClient({FlutterReactiveBle? ble}) : _injectedBle = ble;
+
+  static const _maxContentBytes = 32 * 1024;
+  static const _maxSnapshotBytes = 48 * 1024;
 
   static final Uuid serviceUuid = Uuid.parse(
     '7d2f1000-8d4f-4f5b-a8d0-53b495a9b001',
@@ -109,13 +111,11 @@ class BizTransferBleClient {
 
   Future<BizTransferStatus> connectAndStart({required String deviceId}) async {
     await ensurePermissions();
-    await _connect(deviceId);
-
-    final operation = <String, dynamic>{'op': 'start'};
-
-    final requestId = Random.secure().nextInt(0x7fffffff).toRadixString(16);
-    operation['request'] = requestId;
     try {
+      await _connect(deviceId);
+      final operation = <String, dynamic>{'op': 'start'};
+      final requestId = Random.secure().nextInt(0x7fffffff).toRadixString(16);
+      operation['request'] = requestId;
       await _ble.writeCharacteristicWithResponse(
         _commandCharacteristic!,
         value: utf8.encode(jsonEncode(operation)),
@@ -150,22 +150,27 @@ class BizTransferBleClient {
         'Hết thời gian chờ BizReader kết nối Wi-Fi.',
       );
     } on BizTransferException {
+      await disconnect();
       rethrow;
     } catch (error) {
+      await disconnect();
       throw BizTransferException('Không trao đổi được dữ liệu BLE: $error');
     }
   }
 
   Future<void> stopTransfer() async {
     final characteristic = _commandCharacteristic;
-    if (characteristic == null) return;
     try {
-      await _ble.writeCharacteristicWithResponse(
-        characteristic,
-        value: utf8.encode('{"op":"stop"}'),
-      );
+      if (characteristic != null) {
+        await _ble.writeCharacteristicWithResponse(
+          characteristic,
+          value: utf8.encode('{"op":"stop"}'),
+        );
+      }
     } catch (_) {
       // Firmware also closes an abandoned session after its idle timeout.
+    } finally {
+      await disconnect();
     }
   }
 
@@ -174,12 +179,15 @@ class BizTransferBleClient {
     required BizSyncSnapshot local,
   }) async {
     await ensurePermissions();
-    await _connect(deviceId);
     try {
+      await _connect(deviceId);
       final remote = await _pullSnapshot();
       final merged = BizSyncSnapshot(
         content: BizContent.merge(local.content, remote.content),
-        progress: _mergeProgress(local.progress, remote.progress),
+        progress: BizSyncSnapshot.mergeProgress(
+          local.progress,
+          remote.progress,
+        ),
       );
       return await _pushSnapshot(merged);
     } on BizTransferException {
@@ -189,31 +197,6 @@ class BizTransferBleClient {
     } finally {
       await disconnect();
     }
-  }
-
-  List<DeviceReadingProgress> _mergeProgress(
-    List<DeviceReadingProgress> local,
-    List<DeviceReadingProgress> remote,
-  ) {
-    final merged = <String, DeviceReadingProgress>{};
-    for (final item in remote) {
-      merged[item.filename] = item;
-    }
-    for (final item in local) {
-      final previous = merged[item.filename];
-      if (previous == null || item.updatedAt > previous.updatedAt) {
-        merged[item.filename] = DeviceReadingProgress(
-          filename: item.filename,
-          percentage: item.percentage,
-          spineIndex: item.spineIndex,
-          pageNumber: item.pageNumber,
-          pageCount: item.pageCount,
-          pending: true,
-          updatedAt: item.updatedAt,
-        );
-      }
-    }
-    return merged.values.toList();
   }
 
   Future<BizSyncSnapshot> _pullSnapshot() async {
@@ -227,7 +210,19 @@ class BizTransferBleClient {
   }
 
   Future<BizSyncSnapshot> _pushSnapshot(BizSyncSnapshot snapshot) async {
+    final contentBytes = utf8.encode(jsonEncode(snapshot.content.toJson()));
+    if (contentBytes.length > _maxContentBytes) {
+      throw const BizTransferException(
+        'Ghi chú và công việc vượt giới hạn đồng bộ 32 KiB. '
+        'Hãy rút gọn hoặc xóa bớt nội dung.',
+      );
+    }
     final bytes = utf8.encode(jsonEncode(snapshot.toJson()));
+    if (bytes.length > _maxSnapshotBytes) {
+      throw const BizTransferException(
+        'Dữ liệu đồng bộ vượt giới hạn 48 KiB của BizReader.',
+      );
+    }
     final payloadSize = min(236, max(16, _mtu - 7));
     final frames = encodeBleSyncFrames(bytes, payloadSize);
     await _writeCommandAndWait(

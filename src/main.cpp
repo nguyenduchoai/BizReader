@@ -399,7 +399,7 @@ void setup() {
   }
 
   // First serial output only here to avoid timing inconsistencies for power button press duration verification
-  LOG_DBG("MAIN", "Starting CrossPoint version " CROSSPOINT_VERSION);
+  LOG_DBG("MAIN", "Starting BizReader version " CROSSPOINT_VERSION);
 
   // Resolve the single boot-presentation decision. Skipping the splash also
   // skips the panel-clearing pass and the X3 initial-full-sync arming (see
@@ -597,16 +597,22 @@ void loop() {
     activityManager.requestUpdate();
   }
 
+#if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
   const unsigned long activityStartTime = millis();
+#endif
   activityManager.loop();
+#if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
   const unsigned long activityDuration = millis() - activityStartTime;
+#endif
 
   const unsigned long loopDuration = millis() - loopStartTime;
   if (loopDuration > maxLoopDuration) {
     maxLoopDuration = loopDuration;
+#if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
     if (maxLoopDuration > 50) {
       LOG_DBG("LOOP", "New max loop duration: %lu ms (activity: %lu ms)", maxLoopDuration, activityDuration);
     }
+#endif
   }
 
   // Add delay at the end of the loop to prevent tight spinning

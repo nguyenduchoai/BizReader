@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_controller.dart';
 import 'screens/home_shell.dart';
@@ -32,6 +33,9 @@ class BizReaderApp extends StatelessWidget {
     return MaterialApp(
       title: 'BizReader',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('vi'),
+      supportedLocales: const [Locale('vi')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'Roboto',

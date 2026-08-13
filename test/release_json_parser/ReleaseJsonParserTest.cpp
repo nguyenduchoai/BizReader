@@ -4,6 +4,7 @@
 #include <string>
 
 #include "lib/JsonParser/ReleaseJsonParser.h"
+#include "lib/JsonParser/SemVersion.h"
 
 namespace {
 
@@ -597,4 +598,31 @@ TEST(ReleaseJsonParser, ChunkedRealisticEveryBoundary) {
     EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/fw") << "split=" << split;
     EXPECT_EQ(p.getFirmwareSize(), 9999u) << "split=" << split;
   }
+}
+
+TEST(SemVersion, AcceptsReleaseTagAndFirmwareSuffix) {
+  SemVersion release;
+  SemVersion firmware;
+
+  EXPECT_TRUE(parseSemVersion("v1.4.2", release));
+  EXPECT_TRUE(parseSemVersion("1.4.1-bizreader", firmware));
+  EXPECT_GT(compareSemVersions(release, firmware), 0);
+}
+
+TEST(SemVersion, RejectsIncompleteInvalidAndOverflowingValues) {
+  SemVersion version;
+
+  EXPECT_FALSE(parseSemVersion("v1.4", version));
+  EXPECT_FALSE(parseSemVersion("release-1.4.2", version));
+  EXPECT_FALSE(parseSemVersion("1.4.2beta", version));
+  EXPECT_FALSE(parseSemVersion("99999999999999999999.1.1", version));
+}
+
+TEST(SemVersion, ClassifiesBizReaderDevelopmentAndReleaseCandidateBuilds) {
+  EXPECT_TRUE(isBizReaderPreReleaseVersion("1.4.1-dev-main-abc1234"));
+  EXPECT_TRUE(isBizReaderPreReleaseVersion("1.4.1-lilygo-dev"));
+  EXPECT_TRUE(isBizReaderPreReleaseVersion("1.4.1-bizreader-rc+abc1234"));
+  EXPECT_FALSE(isBizReaderPreReleaseVersion("1.4.1-bizreader"));
+  EXPECT_FALSE(isBizReaderPreReleaseVersion("v1.4.1"));
+  EXPECT_FALSE(isBizReaderPreReleaseVersion(nullptr));
 }

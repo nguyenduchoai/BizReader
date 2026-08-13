@@ -53,44 +53,47 @@ class _ContentHubScreenState extends State<ContentHubScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tiện ích BizReader'),
-        actions: [
-          IconButton(
-            onPressed: widget.controller.contentSyncing ? null : _sync,
-            tooltip: 'Đồng bộ BLE hai chiều',
-            icon: widget.controller.contentSyncing
-                ? const SizedBox.square(
-                    dimension: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.sync),
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Tiện ích BizReader'),
+          actions: [
+            IconButton(
+              onPressed: widget.controller.contentSyncing ? null : _sync,
+              tooltip: 'Đồng bộ BLE hai chiều',
+              icon: widget.controller.contentSyncing
+                  ? const SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync),
+            ),
+            const SizedBox(width: 8),
+          ],
+          bottom: TabBar(
+            controller: _tabs,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: const [
+              Tab(icon: Icon(Icons.note_alt_outlined), text: 'Ghi chú'),
+              Tab(icon: Icon(Icons.checklist), text: 'Việc cần làm'),
+              Tab(icon: Icon(Icons.calendar_month_outlined), text: 'Lịch'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'Thời tiết'),
+              Tab(icon: Icon(Icons.photo_outlined), text: 'Nền nghỉ'),
+            ],
           ),
-          const SizedBox(width: 8),
-        ],
-        bottom: TabBar(
+        ),
+        body: TabBarView(
           controller: _tabs,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(icon: Icon(Icons.note_alt_outlined), text: 'Ghi chú'),
-            Tab(icon: Icon(Icons.checklist), text: 'Việc cần làm'),
-            Tab(icon: Icon(Icons.calendar_month_outlined), text: 'Lịch'),
-            Tab(icon: Icon(Icons.cloud_outlined), text: 'Thời tiết'),
-            Tab(icon: Icon(Icons.photo_outlined), text: 'Nền nghỉ'),
+          children: [
+            _NotesPage(controller: widget.controller),
+            _TodosPage(controller: widget.controller),
+            _CalendarPage(controller: widget.controller),
+            _WeatherPage(controller: widget.controller),
+            _SleepPage(controller: widget.controller),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [
-          _NotesPage(controller: widget.controller),
-          _TodosPage(controller: widget.controller),
-          _CalendarPage(controller: widget.controller),
-          _WeatherPage(controller: widget.controller),
-          _SleepPage(controller: widget.controller),
-        ],
       ),
     );
   }
@@ -101,8 +104,8 @@ class _NotesPage extends StatelessWidget {
   final AppController controller;
 
   Future<void> _edit(BuildContext context, [BizNote? note]) async {
-    final title = TextEditingController(text: note?.title);
-    final body = TextEditingController(text: note?.body);
+    var title = note?.title ?? '';
+    var body = note?.body ?? '';
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -112,19 +115,21 @@ class _NotesPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: title,
+              TextFormField(
+                initialValue: title,
                 autofocus: true,
                 maxLength: 80,
                 decoration: const InputDecoration(labelText: 'Tiêu đề'),
+                onChanged: (value) => title = value,
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: body,
+              TextFormField(
+                initialValue: body,
                 minLines: 3,
                 maxLines: 6,
                 maxLength: 500,
                 decoration: const InputDecoration(labelText: 'Nội dung'),
+                onChanged: (value) => body = value,
               ),
             ],
           ),
@@ -135,22 +140,15 @@ class _NotesPage extends StatelessWidget {
             child: const Text('Hủy'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(context, title.text.trim().isNotEmpty),
+            onPressed: () => Navigator.pop(context, title.trim().isNotEmpty),
             child: const Text('Lưu'),
           ),
         ],
       ),
     );
     if (saved == true) {
-      await controller.saveNote(
-        id: note?.id,
-        title: title.text,
-        body: body.text,
-      );
+      await controller.saveNote(id: note?.id, title: title, body: body);
     }
-    title.dispose();
-    body.dispose();
   }
 
   @override
@@ -182,8 +180,8 @@ class _TodosPage extends StatelessWidget {
   final AppController controller;
 
   Future<void> _add(BuildContext context) async {
-    final title = TextEditingController();
-    final due = TextEditingController();
+    var title = '';
+    var due = '';
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -191,17 +189,17 @@ class _TodosPage extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: title,
+            TextFormField(
               autofocus: true,
               maxLength: 100,
               decoration: const InputDecoration(labelText: 'Công việc'),
+              onChanged: (value) => title = value,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: due,
+            TextFormField(
               maxLength: 40,
               decoration: const InputDecoration(labelText: 'Hạn hoàn thành'),
+              onChanged: (value) => due = value,
             ),
           ],
         ),
@@ -211,16 +209,13 @@ class _TodosPage extends StatelessWidget {
             child: const Text('Hủy'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(context, title.text.trim().isNotEmpty),
+            onPressed: () => Navigator.pop(context, title.trim().isNotEmpty),
             child: const Text('Thêm'),
           ),
         ],
       ),
     );
-    if (saved == true) await controller.addTodo(title.text, due: due.text);
-    title.dispose();
-    due.dispose();
+    if (saved == true) await controller.addTodo(title, due: due);
   }
 
   @override
@@ -256,9 +251,9 @@ class _CalendarPage extends StatelessWidget {
   final AppController controller;
 
   Future<void> _add(BuildContext context) async {
-    final title = TextEditingController();
-    final time = TextEditingController();
-    final location = TextEditingController();
+    var title = '';
+    var time = '';
+    var location = '';
     var date = DateTime.now();
     final saved = await showDialog<bool>(
       context: context,
@@ -269,11 +264,11 @@ class _CalendarPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: title,
+                TextFormField(
                   autofocus: true,
                   maxLength: 100,
                   decoration: const InputDecoration(labelText: 'Tên sự kiện'),
+                  onChanged: (value) => title = value,
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -292,17 +287,17 @@ class _CalendarPage extends StatelessWidget {
                     if (picked != null) setDialogState(() => date = picked);
                   },
                 ),
-                TextField(
-                  controller: time,
+                TextFormField(
                   maxLength: 5,
                   keyboardType: TextInputType.datetime,
                   decoration: const InputDecoration(labelText: 'Giờ (HH:mm)'),
+                  onChanged: (value) => time = value,
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: location,
+                TextFormField(
                   maxLength: 80,
                   decoration: const InputDecoration(labelText: 'Địa điểm'),
+                  onChanged: (value) => location = value,
                 ),
               ],
             ),
@@ -313,8 +308,7 @@ class _CalendarPage extends StatelessWidget {
               child: const Text('Hủy'),
             ),
             FilledButton(
-              onPressed: () =>
-                  Navigator.pop(context, title.text.trim().isNotEmpty),
+              onPressed: () => Navigator.pop(context, title.trim().isNotEmpty),
               child: const Text('Thêm'),
             ),
           ],
@@ -323,15 +317,12 @@ class _CalendarPage extends StatelessWidget {
     );
     if (saved == true) {
       await controller.addCalendarEvent(
-        title: title.text,
+        title: title,
         date: date,
-        time: time.text,
-        location: location.text,
+        time: time,
+        location: location,
       );
     }
-    title.dispose();
-    time.dispose();
-    location.dispose();
   }
 
   @override
@@ -366,11 +357,11 @@ class _WeatherPage extends StatelessWidget {
 
   Future<void> _edit(BuildContext context) async {
     final current = controller.content.weather;
-    final location = TextEditingController(text: current.location);
-    final condition = TextEditingController(text: current.condition);
-    final temperature = TextEditingController(text: '${current.temperature}');
-    final high = TextEditingController(text: '${current.high}');
-    final low = TextEditingController(text: '${current.low}');
+    var location = current.location;
+    var condition = current.condition;
+    var temperature = '${current.temperature}';
+    var high = '${current.high}';
+    var low = '${current.low}';
     final action = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
@@ -379,41 +370,46 @@ class _WeatherPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: location,
+              TextFormField(
+                initialValue: location,
                 decoration: const InputDecoration(labelText: 'Địa điểm'),
+                onChanged: (value) => location = value,
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: condition,
+              TextFormField(
+                initialValue: condition,
                 decoration: const InputDecoration(labelText: 'Trạng thái'),
+                onChanged: (value) => condition = value,
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: temperature,
+                    child: TextFormField(
+                      initialValue: temperature,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Hiện tại °C',
                       ),
+                      onChanged: (value) => temperature = value,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: TextField(
-                      controller: high,
+                    child: TextFormField(
+                      initialValue: high,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Cao °C'),
+                      onChanged: (value) => high = value,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: TextField(
-                      controller: low,
+                    child: TextFormField(
+                      initialValue: low,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Thấp °C'),
+                      onChanged: (value) => low = value,
                     ),
                   ),
                 ],
@@ -433,7 +429,7 @@ class _WeatherPage extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () =>
-                Navigator.pop(context, location.text.trim().isNotEmpty ? 1 : 0),
+                Navigator.pop(context, location.trim().isNotEmpty ? 1 : 0),
             child: const Text('Lưu'),
           ),
         ],
@@ -441,15 +437,15 @@ class _WeatherPage extends StatelessWidget {
     );
     try {
       if (action == 2) {
-        await controller.refreshWeather(location.text);
+        await controller.refreshWeather(location);
       } else if (action == 1) {
         await controller.updateWeather(
           BizWeather(
-            location: location.text.trim(),
-            condition: condition.text.trim(),
-            temperature: int.tryParse(temperature.text) ?? 0,
-            high: int.tryParse(high.text) ?? 0,
-            low: int.tryParse(low.text) ?? 0,
+            location: location.trim(),
+            condition: condition.trim(),
+            temperature: int.tryParse(temperature) ?? 0,
+            high: int.tryParse(high) ?? 0,
+            low: int.tryParse(low) ?? 0,
             updatedAt: DateTime.now().millisecondsSinceEpoch,
           ),
         );
@@ -461,11 +457,6 @@ class _WeatherPage extends StatelessWidget {
         ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
-    location.dispose();
-    condition.dispose();
-    temperature.dispose();
-    high.dispose();
-    low.dispose();
   }
 
   @override
@@ -510,6 +501,11 @@ class _WeatherPage extends StatelessWidget {
         const SizedBox(height: 12),
         const Text(
           'Cập nhật tự động theo tên thành phố hoặc nhập tay, sau đó đồng bộ BLE với BizReader.',
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Dữ liệu: Open-Meteo',
+          style: TextStyle(fontSize: 12, color: Color(0xFF68707B)),
         ),
       ],
     );

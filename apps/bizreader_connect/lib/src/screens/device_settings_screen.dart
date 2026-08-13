@@ -48,6 +48,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
         await widget.controller.prepareTransfer();
       } catch (_) {
         success = false;
+      } finally {
+        await widget.controller.finishTransfer();
       }
     }
     if (!mounted) return;
@@ -175,7 +177,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                         leading: const Icon(Icons.info_outline),
                         title: const Text('Giới thiệu'),
                         subtitle: const Text('BizReader • Hoài Nguyễn'),
-                        trailing: const Text('0.6.0'),
+                        trailing: const Text('0.7.0'),
+                        onTap: () => _showAbout(context),
                       ),
                     ],
                   ),
@@ -215,9 +218,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Cập nhật firmware'),
         content: const Text(
-          'Trên BizReader, mở Cài đặt > Hệ thống > Cập nhật OTA. '
-          'Ứng dụng sẽ tích hợp kiểm tra và kích hoạt OTA sau khi BizSync '
-          'được thêm vào firmware.',
+          'Trên BizReader, mở Cài đặt > Hệ thống > Cập nhật OTA và làm theo '
+          'hướng dẫn trên thiết bị.',
         ),
         actions: [
           FilledButton(
@@ -225,6 +227,20 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
             child: const Text('Đóng'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showAbout(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'BizReader',
+      applicationVersion: '0.7.0',
+      applicationLegalese: 'Hoài Nguyễn',
+      applicationIcon: Image.asset(
+        'assets/branding/bizreader_logo.png',
+        width: 52,
+        height: 52,
       ),
     );
   }

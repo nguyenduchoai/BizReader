@@ -96,10 +96,17 @@ void BizBookUploadHandler::raw(WebServer& server, const String& uri, HTTPRaw& ra
       responseMessage = "Invalid transfer token";
       return;
     }
-    if (!expectedSha256.isEmpty() && expectedSha256.length() != 64) {
+    if (expectedSha256.length() != 64) {
       responseCode = 400;
-      responseMessage = "Invalid SHA-256 header";
+      responseMessage = "Missing or invalid SHA-256 header";
       return;
+    }
+    for (size_t i = 0; i < expectedSha256.length(); ++i) {
+      if (!std::isxdigit(static_cast<unsigned char>(expectedSha256[i]))) {
+        responseCode = 400;
+        responseMessage = "Missing or invalid SHA-256 header";
+        return;
+      }
     }
     if (!preparePath(uri)) return;
     const size_t maxSize = targetPath == "/sleep.bmp" ? MAX_WALLPAPER_SIZE : MAX_BOOK_SIZE;
@@ -206,7 +213,7 @@ void BizBookUploadHandler::finishUpload() {
     transferService.onUploadFailed(responseMessage);
     return;
   }
-  if (!expectedSha256.isEmpty() && !equalsIgnoreCase(expectedSha256, actualSha256)) {
+  if (!equalsIgnoreCase(expectedSha256, actualSha256)) {
     responseCode = 422;
     responseMessage = "SHA-256 mismatch";
     abortUpload();

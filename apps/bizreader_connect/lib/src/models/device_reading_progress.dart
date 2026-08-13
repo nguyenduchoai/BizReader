@@ -17,6 +17,10 @@ class DeviceReadingProgress {
   final bool pending;
   final int updatedAt;
 
+  double get chapterProgressPercent => pageCount > 1
+      ? (pageNumber * 100 / (pageCount - 1)).clamp(0, 100).toDouble()
+      : 0;
+
   Map<String, Object?> toJson() => {
     'filename': filename,
     'percentage': percentage,

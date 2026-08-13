@@ -75,6 +75,10 @@ Tiến độ từ App mới hơn được đặt `pending: true`; firmware áp d
 ứng được mở. Khi thiết bị lưu trang mới, `updatedAt` tăng và lần sync sau sẽ đưa
 vị trí đó về App.
 
+Firmware validate toàn bộ snapshot trước khi ghi và thay thế từng file qua
+`.part/.bak`. Việc ghi `content.json` cùng nhiều file tiến độ chưa là một
+transaction xuyên file; lỗi SD giữa vòng commit có thể cần chạy đồng bộ lại.
+
 ## Truyền sách và ảnh qua Wi-Fi
 
 Lệnh `start` không nhận SSID/mật khẩu; firmware chỉ dùng Wi-Fi đã lưu trên máy.
@@ -90,7 +94,7 @@ X-BizReader-Token: <token>
 
 Sách được ghi vào `.part`, kiểm tra kích thước và SHA-256 rồi mới đổi tên. File
 tối đa 128 MiB và nhận `.epub`, `.txt`, `.xtc`, `.xtch`, `.bmp`. Các endpoint
-HTTP content/progress v1 vẫn được giữ để tương thích, nhưng App 0.6 dùng BLE cho
+HTTP content/progress v1 vẫn được giữ để tương thích, nhưng App 0.7 dùng BLE cho
 dữ liệu nhỏ.
 
 ## Ranh giới tin cậy

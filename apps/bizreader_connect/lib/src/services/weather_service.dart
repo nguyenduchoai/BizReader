@@ -6,17 +6,30 @@ import '../models/biz_content.dart';
 import 'webdav_device_client.dart';
 
 class WeatherService {
-  WeatherService({http.Client? client}) : _client = client ?? http.Client();
+  WeatherService({
+    http.Client? client,
+    this.apiKey = const String.fromEnvironment('OPEN_METEO_API_KEY'),
+  }) : _client = client ?? http.Client();
 
   final http.Client _client;
+  final String apiKey;
+
+  bool get _usesCustomerApi => apiKey.trim().isNotEmpty;
 
   Future<BizWeather> fetch(String city) async {
-    final geocoding = Uri.https('geocoding-api.open-meteo.com', '/v1/search', {
-      'name': city,
-      'count': '1',
-      'language': 'vi',
-      'format': 'json',
-    });
+    final geocoding = Uri.https(
+      _usesCustomerApi
+          ? 'customer-geocoding-api.open-meteo.com'
+          : 'geocoding-api.open-meteo.com',
+      '/v1/search',
+      {
+        'name': city,
+        'count': '1',
+        'language': 'vi',
+        'format': 'json',
+        if (_usesCustomerApi) 'apikey': apiKey,
+      },
+    );
     final locationResponse = await _client
         .get(geocoding)
         .timeout(const Duration(seconds: 12));
@@ -36,14 +49,19 @@ class WeatherService {
       throw const DeviceConnectionException('Địa điểm không có tọa độ hợp lệ.');
     }
 
-    final forecast = Uri.https('api.open-meteo.com', '/v1/forecast', {
-      'latitude': '$latitude',
-      'longitude': '$longitude',
-      'current': 'temperature_2m,weather_code',
-      'daily': 'temperature_2m_max,temperature_2m_min',
-      'timezone': 'auto',
-      'forecast_days': '1',
-    });
+    final forecast = Uri.https(
+      _usesCustomerApi ? 'customer-api.open-meteo.com' : 'api.open-meteo.com',
+      '/v1/forecast',
+      {
+        'latitude': '$latitude',
+        'longitude': '$longitude',
+        'current': 'temperature_2m,weather_code',
+        'daily': 'temperature_2m_max,temperature_2m_min',
+        'timezone': 'auto',
+        'forecast_days': '1',
+        if (_usesCustomerApi) 'apikey': apiKey,
+      },
+    );
     final weatherResponse = await _client
         .get(forecast)
         .timeout(const Duration(seconds: 12));

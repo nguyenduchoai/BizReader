@@ -1,6 +1,6 @@
 # Web Server Guide
 
-This guide explains how to use CrossPoint Reader's built-in web server for file
+This guide explains how to use BizReader's built-in web server for file
 transfer, device settings, Wi-Fi/OPDS management, and SD-card font management.
 
 ## Overview
@@ -41,7 +41,7 @@ After connection, the reader shows:
 - The connected SSID
 - A QR code for the web URL
 - The direct IP URL, for example `http://192.168.1.102/`
-- The mDNS fallback URL, usually `http://crosspoint.local/`
+- The mDNS fallback URL, usually `http://bizreader.local/`
 
 Use either URL from a phone, tablet, or computer on the same network.
 
@@ -51,10 +51,10 @@ Use either URL from a phone, tablet, or computer on the same network.
 2. Connect your phone or computer to the open Wi-Fi network:
 
 ```text
-CrossPoint-Reader
+BizReader
 ```
 
-3. Open the URL shown on the reader. `http://crosspoint.local/` is preferred
+3. Open the URL shown on the reader. `http://bizreader.local/` is preferred
    when supported; the fallback IP is typically `http://192.168.4.1/`.
 
 The reader displays one QR code for joining the hotspot and another QR code for
@@ -135,7 +135,7 @@ Endpoint details are documented in [webserver-endpoints.md](./webserver-endpoint
 ## Tips
 
 1. Use **Create Hotspot** when no trusted network is available.
-2. Prefer `crosspoint.local` when available, but keep the displayed IP address as a fallback.
+2. Prefer `bizreader.local` when available, but keep the displayed IP address as a fallback.
 3. Move closer to the router if upload progress stalls in Join Network mode.
 4. Upload custom fonts through the Fonts page or copy them to `/.fonts/` or `/fonts/` on the SD card.
 5. Exit File Transfer mode when finished to conserve battery.

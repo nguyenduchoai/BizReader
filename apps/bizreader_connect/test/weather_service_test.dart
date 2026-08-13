@@ -39,4 +39,35 @@ void main() {
     expect(weather.high, 34);
     expect(weather.low, 28);
   });
+
+  test('uses customer endpoints when a commercial API key is supplied', () async {
+    final requests = <http.Request>[];
+    final service = WeatherService(
+      apiKey: 'commercial-key',
+      client: MockClient((request) async {
+        requests.add(request);
+        if (request.url.host == 'customer-geocoding-api.open-meteo.com') {
+          return http.Response.bytes(
+            utf8.encode(
+              '{"results":[{"name":"Huế","latitude":16.46,"longitude":107.59}]}',
+            ),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        return http.Response(
+          '{"current":{"temperature_2m":27,"weather_code":3},'
+          '"daily":{"temperature_2m_max":[30],"temperature_2m_min":[24]}}',
+          200,
+        );
+      }),
+    );
+
+    await service.fetch('Huế');
+
+    expect(requests.first.url.host, 'customer-geocoding-api.open-meteo.com');
+    expect(requests.last.url.host, 'customer-api.open-meteo.com');
+    expect(requests.first.url.queryParameters['apikey'], 'commercial-key');
+    expect(requests.last.url.queryParameters['apikey'], 'commercial-key');
+  });
 }

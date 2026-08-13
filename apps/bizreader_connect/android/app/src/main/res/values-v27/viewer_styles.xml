@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BizReaderViewer" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/bizreader_viewer_primary</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#FAFAF7</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

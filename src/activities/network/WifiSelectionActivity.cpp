@@ -216,10 +216,10 @@ void WifiSelectionActivity::attemptConnection() {
   WiFi.disconnect(true, true);  // Abort any in-progress SDK auto-connect and clear NVS-saved SSID
   delay(100);
 
-  // Set hostname so routers show "CrossPoint-Reader-AABBCCDDEEFF" instead of "esp32-XXXXXXXXXXXX"
+  // Use a stable product hostname instead of the generic ESP32 name.
   String mac = WiFi.macAddress();
   mac.replace(":", "");
-  String hostname = "CrossPoint-Reader-" + mac;
+  String hostname = "BizReader-" + mac;
   WiFi.setHostname(hostname.c_str());
 
   if (selectedRequiresPassword && !enteredPassword.empty()) {
@@ -419,7 +419,7 @@ void WifiSelectionActivity::loop() {
             screen.y + metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
         const int contentHeight = screen.height - contentTop - metrics.verticalSpacing * 2;
         const int touched = mappedInput.touchListIndex(Rect{screen.x, contentTop, screen.width, contentHeight},
-                                                        networks.size(), selectedNetworkIndex, false);
+                                                       networks.size(), selectedNetworkIndex, false);
         if (touched >= 0) {
           selectedNetworkIndex = touched;
         } else {

@@ -29,8 +29,13 @@
 ```bash
 flutter pub get
 flutter test
-flutter build apk --release --split-per-abi
+flutter build apk --debug
 ```
+
+Bản phát hành bắt buộc có upload key trong `android/key.properties`; Gradle sẽ
+dừng rõ ràng thay vì âm thầm ký bằng debug key. Sau khi cấu hình key, build bằng
+`flutter build apk --release --split-per-abi` hoặc
+`flutter build appbundle --release`.
 
 APK release ARM64 nằm tại:
 
@@ -42,6 +47,13 @@ Trên BizReader, mở **Truyền tệp > Kết nối App** để bật BLE, sau 
 BizReader** trong App và chạm thiết bị để lưu. Khi gửi sách, mở lại màn hình
 **Kết nối App**; App yêu cầu thiết bị dùng Wi-Fi đã lưu và mở phiên truyền.
 Android cần quyền quét/kết nối Bluetooth.
+
+Thời tiết dùng Open-Meteo và hiển thị attribution trong App. Endpoint miễn phí
+chỉ phù hợp đánh giá, thử nghiệm và mục đích phi thương mại. Bản thương mại cần
+gói Open-Meteo có API key và build bằng
+`--dart-define=OPEN_METEO_API_KEY=<key>`; khi có key, App tự chuyển geocoding và
+forecast sang customer endpoint. Dart define được nhúng vào APK, vì vậy sản
+phẩm quy mô lớn nên đặt khóa sau backend/proxy có kiểm soát hạn mức.
 
 Trình xem đa định dạng được tích hợp từ dự án Gander (MIT) và đóng gói toàn bộ
 bộ dựng tài liệu trong APK; nội dung không được tải lên máy chủ. EPUB vẫn dùng

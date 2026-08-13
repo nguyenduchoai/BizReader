@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <limits>
 
 namespace {
 constexpr char DIRECTORY[] = "/.crosspoint/bizsync";
@@ -57,10 +58,49 @@ bool validateDocument(const JsonDocument& document, std::string& error) {
   return true;
 }
 
+bool isValidContentFile(const std::string& path) {
+  if (!Storage.exists(path.c_str())) return false;
+  const String json = Storage.readFile(path.c_str());
+  if (json.isEmpty() || json.length() > BizContentStore::MAX_JSON_SIZE) return false;
+  JsonDocument document;
+  std::string error;
+  return !deserializeJson(document, json) && validateDocument(document, error);
+}
+
+bool recoverContentFile() {
+  const std::string temporaryPath = std::string(BizContentStore::PATH) + ".part";
+  const std::string backupPath = std::string(BizContentStore::PATH) + ".bak";
+
+  if (isValidContentFile(BizContentStore::PATH)) {
+    Storage.remove(temporaryPath.c_str());
+    Storage.remove(backupPath.c_str());
+    return true;
+  }
+
+  if (isValidContentFile(backupPath)) {
+    Storage.remove(BizContentStore::PATH);
+    if (Storage.rename(backupPath.c_str(), BizContentStore::PATH)) {
+      Storage.remove(temporaryPath.c_str());
+      return true;
+    }
+  }
+
+  if (isValidContentFile(temporaryPath)) {
+    Storage.remove(BizContentStore::PATH);
+    if (Storage.rename(temporaryPath.c_str(), BizContentStore::PATH)) {
+      Storage.remove(backupPath.c_str());
+      return true;
+    }
+  }
+  return false;
+}
+
 uint64_t nextTimestamp(const uint64_t previous) {
   const time_t now = time(nullptr);
   const uint64_t epochMs = now > 1700000000 ? static_cast<uint64_t>(now) * 1000ULL : 0;
-  return std::max(epochMs, previous + 1);
+  const uint64_t incremented =
+      previous == std::numeric_limits<uint64_t>::max() ? previous : static_cast<uint64_t>(previous + 1);
+  return std::max(epochMs, incremented);
 }
 }  // namespace
 
@@ -78,6 +118,7 @@ bool BizContentStore::saveJson(const std::string& json, std::string& error) {
   if (!validateDocument(document, error)) return false;
 
   Storage.mkdir(DIRECTORY);
+  recoverContentFile();
   const std::string temporaryPath = std::string(PATH) + ".part";
   Storage.remove(temporaryPath.c_str());
   if (!Storage.writeFile(temporaryPath.c_str(), String(json.c_str()))) {
@@ -105,7 +146,7 @@ bool BizContentStore::saveJson(const std::string& json, std::string& error) {
 
 bool BizContentStore::load(BizContentData& data) {
   data = {};
-  if (!Storage.exists(PATH)) return false;
+  if (!recoverContentFile()) return false;
   const String json = Storage.readFile(PATH);
   JsonDocument document;
   std::string error;
@@ -148,7 +189,7 @@ bool BizContentStore::load(BizContentData& data) {
 
 bool BizContentStore::loadJson(std::string& json) {
   json.clear();
-  if (!Storage.exists(PATH)) return false;
+  if (!recoverContentFile()) return false;
   const String stored = Storage.readFile(PATH);
   if (stored.isEmpty()) return false;
   json.assign(stored.c_str(), stored.length());
@@ -156,7 +197,7 @@ bool BizContentStore::loadJson(std::string& json) {
 }
 
 bool BizContentStore::toggleTodo(const std::string& id) {
-  if (id.empty() || !Storage.exists(PATH)) return false;
+  if (id.empty() || !recoverContentFile()) return false;
   const String stored = Storage.readFile(PATH);
   JsonDocument document;
   std::string error;

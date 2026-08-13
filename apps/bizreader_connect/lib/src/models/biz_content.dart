@@ -170,6 +170,30 @@ class BizContent {
   final String? wallpaperPath;
   final int updatedAt;
 
+  static List<T> _boundedNewest<T>(
+    Iterable<T> values, {
+    required int limit,
+    required String Function(T) idOf,
+    required int Function(T) updatedAtOf,
+  }) {
+    final newestById = <String, T>{};
+    for (final value in values) {
+      final id = idOf(value);
+      if (id.isEmpty) continue;
+      final previous = newestById[id];
+      if (previous == null || updatedAtOf(value) > updatedAtOf(previous)) {
+        newestById[id] = value;
+      }
+    }
+
+    final newest = newestById.values.toList()
+      ..sort((a, b) {
+        final timestamp = updatedAtOf(b).compareTo(updatedAtOf(a));
+        return timestamp != 0 ? timestamp : idOf(a).compareTo(idOf(b));
+      });
+    return newest.take(limit).toList().reversed.toList(growable: false);
+  }
+
   BizContent copyWith({
     List<BizNote>? notes,
     List<BizTodo>? todos,
@@ -196,12 +220,32 @@ class BizContent {
   Map<String, Object?> toJson() => {
     'version': 2,
     'updatedAt': updatedAt,
-    'notes': notes.take(40).map((item) => item.toJson()).toList(),
-    'todos': todos.take(60).map((item) => item.toJson()).toList(),
+    'notes': _boundedNewest(
+      notes,
+      limit: 40,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+    ).map((item) => item.toJson()).toList(),
+    'todos': _boundedNewest(
+      todos,
+      limit: 60,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+    ).map((item) => item.toJson()).toList(),
     'events': events.take(60).map((item) => item.toJson()).toList(),
     'deleted': {
-      'notes': deletedNotes.take(80).map((item) => item.toJson()).toList(),
-      'todos': deletedTodos.take(120).map((item) => item.toJson()).toList(),
+      'notes': _boundedNewest(
+        deletedNotes,
+        limit: 80,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+      ).map((item) => item.toJson()).toList(),
+      'todos': _boundedNewest(
+        deletedTodos,
+        limit: 120,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+      ).map((item) => item.toJson()).toList(),
     },
     'weather': weather.toJson(),
     'sleep': {
@@ -248,11 +292,31 @@ class BizContent {
     }
 
     return BizContent(
-      notes: readList('notes', BizNote.fromJson),
-      todos: readList('todos', BizTodo.fromJson),
+      notes: _boundedNewest(
+        readList('notes', BizNote.fromJson),
+        limit: 40,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+      ),
+      todos: _boundedNewest(
+        readList('todos', BizTodo.fromJson),
+        limit: 60,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+      ),
       events: readList('events', BizCalendarEvent.fromJson),
-      deletedNotes: readDeleted('notes'),
-      deletedTodos: readDeleted('todos'),
+      deletedNotes: _boundedNewest(
+        readDeleted('notes'),
+        limit: 80,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+      ),
+      deletedTodos: _boundedNewest(
+        readDeleted('todos'),
+        limit: 120,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
+      ),
       weather: weather is Map
           ? BizWeather.fromJson(weather.cast<String, Object?>())
           : const BizWeather(),
@@ -296,40 +360,68 @@ class BizContent {
       List<BizDeletedItem> first,
       List<BizDeletedItem> second,
     ) {
-      final values = <String, int>{};
+      final newestById = <String, BizDeletedItem>{};
       for (final item in [...first, ...second]) {
-        values[item.id] = item.updatedAt > (values[item.id] ?? 0)
-            ? item.updatedAt
-            : values[item.id]!;
+        if (item.id.isEmpty) continue;
+        final previous = newestById[item.id];
+        if (previous == null || item.updatedAt > previous.updatedAt) {
+          newestById[item.id] = item;
+        }
       }
-      return values.entries
-          .map((item) => BizDeletedItem(id: item.key, updatedAt: item.value))
-          .toList();
+      return newestById.values.toList(growable: false);
     }
 
-    final deletedNotes = mergeDeleted(local.deletedNotes, remote.deletedNotes);
-    final deletedTodos = mergeDeleted(local.deletedTodos, remote.deletedTodos);
-    final newest = local.updatedAt >= remote.updatedAt ? local : remote;
+    final allDeletedNotes = mergeDeleted(
+      local.deletedNotes,
+      remote.deletedNotes,
+    );
+    final allDeletedTodos = mergeDeleted(
+      local.deletedTodos,
+      remote.deletedTodos,
+    );
+    final deletedNotes = _boundedNewest(
+      allDeletedNotes,
+      limit: 80,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+    );
+    final deletedTodos = _boundedNewest(
+      allDeletedTodos,
+      limit: 120,
+      idOf: (item) => item.id,
+      updatedAtOf: (item) => item.updatedAt,
+    );
+    final appOwned = local.updatedAt > 0 ? local : remote;
     return BizContent(
-      notes: mergeItems(
-        local.notes,
-        remote.notes,
-        deletedNotes,
-        (item) => item.id,
-        (item) => item.updatedAt,
+      notes: _boundedNewest(
+        mergeItems(
+          local.notes,
+          remote.notes,
+          allDeletedNotes,
+          (item) => item.id,
+          (item) => item.updatedAt,
+        ),
+        limit: 40,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
       ),
-      todos: mergeItems(
-        local.todos,
-        remote.todos,
-        deletedTodos,
-        (item) => item.id,
-        (item) => item.updatedAt,
+      todos: _boundedNewest(
+        mergeItems(
+          local.todos,
+          remote.todos,
+          allDeletedTodos,
+          (item) => item.id,
+          (item) => item.updatedAt,
+        ),
+        limit: 60,
+        idOf: (item) => item.id,
+        updatedAtOf: (item) => item.updatedAt,
       ),
-      events: newest.events,
+      events: appOwned.events,
       deletedNotes: deletedNotes,
       deletedTodos: deletedTodos,
-      weather: newest.weather,
-      sleepMode: newest.sleepMode,
+      weather: appOwned.weather,
+      sleepMode: appOwned.sleepMode,
       wallpaperPath: local.wallpaperPath,
       updatedAt: local.updatedAt > remote.updatedAt
           ? local.updatedAt

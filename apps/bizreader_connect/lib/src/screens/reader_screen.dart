@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../models/local_book.dart';
+import '../services/epub_resume_position.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.controller, required this.book});
@@ -88,14 +89,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final chapters = controller.tableOfContents();
     _chapterCount = math.max(1, chapters.length);
     if (widget.book.epubCfi == null &&
-        widget.book.progress > 0 &&
+        (widget.book.progress > 0 ||
+            widget.book.chapterNumber > 0 ||
+            widget.book.chapterProgress > 0) &&
         chapters.isNotEmpty) {
-      final target = math.min(
-        chapters.length - 1,
-        (widget.book.progress * chapters.length).floor(),
+      final target = epubResumeIndex(
+        chapterStartIndexes: [
+          for (final chapter in chapters) chapter.startIndex,
+        ],
+        chapterNumber: widget.book.chapterNumber,
+        chapterProgress: widget.book.chapterProgress,
+        bookProgress: widget.book.progress,
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.scrollTo(index: chapters[target].startIndex);
+        controller.scrollTo(index: target);
       });
     }
   }

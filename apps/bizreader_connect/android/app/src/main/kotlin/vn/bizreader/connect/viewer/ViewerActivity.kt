@@ -48,8 +48,6 @@ import java.io.InputStream
 class ViewerActivity : AppCompatActivity() {
 
     companion object {
-        const val EXTRA_PATH = "path"
-        private const val ASSET_HOST = "appassets.androidplatform.net"
         private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
         private const val DOWNLOADS_AUTHORITY = "com.android.providers.downloads.documents"
 
@@ -101,12 +99,15 @@ class ViewerActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
         val container = findViewById<FrameLayout>(R.id.container)
 
-        // Files arrive via VIEW (data), the share sheet (EXTRA_STREAM),
-        // a plain path extra, or as shared text (EXTRA_TEXT).
-        val uri = intent.data
+        // External files arrive as granted content URIs. Shared plain text is
+        // copied into this app's cache before it is opened.
+        val externalUri = intent.data
             ?: IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            ?: intent.getStringExtra(EXTRA_PATH)?.let { Uri.fromFile(File(it)) }
-            ?: sharedTextUri()
+        if (externalUri != null && externalUri.scheme != "content") {
+            finish()
+            return
+        }
+        val uri = externalUri ?: sharedTextUri()
         if (uri == null) {
             finish()
             return
@@ -416,10 +417,24 @@ class ViewerActivity : AppCompatActivity() {
                 // The document is served here rather than through WebViewAssetLoader
                 // because a PathHandler is only given the path, and answering range
                 // requests needs the Range header off the request itself.
-                if (request.url.host == ASSET_HOST &&
+                if (request.url.host == ViewerRequestPolicy.ASSET_HOST &&
                     request.url.path?.startsWith("/doc/") == true
                 ) {
                     return docResponse(uri, mime, total, request.requestHeaders["Range"])
+                }
+                if (ViewerRequestPolicy.blocksNetworkRequest(
+                        request.url.scheme,
+                        request.url.host,
+                    )
+                ) {
+                    return WebResourceResponse(
+                        "text/plain",
+                        "utf-8",
+                        403,
+                        "Forbidden",
+                        mapOf("Cache-Control" to "no-store"),
+                        ByteArrayInputStream(ByteArray(0)),
+                    )
                 }
                 return assetLoader.shouldInterceptRequest(request.url)
             }
@@ -427,7 +442,7 @@ class ViewerActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
-            ): Boolean = request.url.host != ASSET_HOST
+            ): Boolean = request.url.host != ViewerRequestPolicy.ASSET_HOST
         }
 
         container.addView(web, matchParent())
@@ -435,7 +450,7 @@ class ViewerActivity : AppCompatActivity() {
         // and the loader the page picks cannot disagree
         val ranged = if (useRanges(total)) 1 else 0
         web.loadUrl(
-            "https://$ASSET_HOST/assets/viewer/${kind.page}" +
+            "https://${ViewerRequestPolicy.ASSET_HOST}/assets/viewer/${kind.page}" +
                 "?name=${Uri.encode(name)}&ext=${Uri.encode(ext)}&ranged=$ranged" +
                 pdfjsFloorParams(kind)
         )
@@ -565,9 +580,24 @@ class ViewerActivity : AppCompatActivity() {
         val pfd = contentResolver.openFileDescriptor(uri, "r")
             ?: throw java.io.IOException("cannot open $uri")
         val stream = java.io.FileInputStream(pfd.fileDescriptor)
-        // Seekable for anything file backed; a pipe has to be read through instead
-        runCatching { stream.channel.position(start) }
-            .onFailure { runCatching { stream.skip(start) } }
+        // Seekable for anything file backed; a provider pipe has to be read through.
+        val seeked = runCatching { stream.channel.position(start) }.isSuccess
+        if (!seeked) {
+            var remaining = start
+            while (remaining > 0) {
+                val skipped = stream.skip(remaining)
+                if (skipped > 0) {
+                    remaining -= skipped
+                } else {
+                    if (stream.read() < 0) {
+                        stream.close()
+                        pfd.close()
+                        throw java.io.EOFException("cannot skip to $start")
+                    }
+                    remaining--
+                }
+            }
+        }
         return LimitedInputStream(stream, end - start + 1, pfd)
     }
 

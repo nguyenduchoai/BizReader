@@ -25,14 +25,19 @@ class BookLibraryService {
     final encoded = preferences.getString(_storageKey);
     if (encoded == null || encoded.isEmpty) return const [];
     try {
-      final decoded = jsonDecode(encoded) as List<dynamic>;
-      return decoded
-          .map(
-            (item) => LocalBook.fromJson((item as Map).cast<String, Object?>()),
-          )
-          .where((book) => File(book.filePath).existsSync())
-          .toList(growable: false);
-    } on FormatException {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List) return const [];
+      final books = <LocalBook>[];
+      for (final item in decoded.whereType<Map>()) {
+        try {
+          final book = LocalBook.fromJson(item.cast<String, Object?>());
+          if (File(book.filePath).existsSync()) books.add(book);
+        } on Object {
+          // Preserve valid books when one persisted record is malformed.
+        }
+      }
+      return books;
+    } on Object {
       return const [];
     }
   }
@@ -57,7 +62,6 @@ class BookLibraryService {
         author: bookRef.Author?.trim() ?? '',
         filePath: destination.path,
         remoteFilename: safeFilename,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
     } on FileSystemException {
       throw const BookImportException(

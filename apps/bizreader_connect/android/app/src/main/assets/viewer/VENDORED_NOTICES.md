@@ -1,10 +1,10 @@
 # Vendored viewer libraries
 
 Gander renders Office formats, Markdown and spreadsheets with open source
-JavaScript libraries bundled under `app/src/main/assets/viewer/lib/`. They are
-vendored (not fetched at runtime) because the app has no network access at all.
-
-`scripts/fetch-viewer-libs.sh` re-downloads every file below from its upstream.
+JavaScript libraries bundled under `app/src/main/assets/viewer/lib/`. The viewer
+does not fetch renderer code or user documents from the Internet at runtime.
+Mỗi lần nâng phiên bản phải tải từ upstream trong bảng, kiểm tra giấy phép/hash,
+chạy Android lint/test và cập nhật đồng thời bảng này.
 
 | File | Project | Version | License | Upstream |
 | --- | --- | --- | --- | --- |
@@ -32,7 +32,7 @@ itself. That makes the Chromium floor a fact to check rather than a preference.
 
 - The legacy build of 5.7.284 supports **Chromium 125 and newer** (Mozilla's
   pdf.js FAQ). That number is `PDFJS_MIN_CHROMIUM_MAJOR` in
-  `app/src/main/java/com/arjun/gander/ViewerActivity.kt`, compared against the
+  `app/src/main/kotlin/vn/bizreader/connect/viewer/ViewerActivity.kt`, compared against the
   WebView package actually in use. Below it, `pdf.html` shows a card explaining
   that Android System WebView needs updating instead of loading the renderer.
 - **Chromium 138 is the ceiling on Android 8.0, 8.1 and 9.0.** Chromium 139
@@ -42,12 +42,12 @@ itself. That makes the Chromium floor a fact to check rather than a preference.
   floor first: if it is above 138, this is a decision about dropping PDFs on
   Android 8 and 9, not a version bump.
 
-Bumping pdf.js means editing together the two `pdf.*.mjs` rows above, `PDFJS` in
-`scripts/fetch-viewer-libs.sh`, and `PDFJS_MIN_CHROMIUM_MAJOR`. The card's wording
+Bumping pdf.js means editing together the two `pdf.*.mjs` rows above and
+`PDFJS_MIN_CHROMIUM_MAJOR`. The card's wording
 lives in `pdf.html` and reads both version numbers out of the query string, so it
 needs no edit.
 
 Notes for packagers (F-Droid and friends): the minified files are unmodified
 upstream distribution artifacts. If unminified sources are required, every
-project above publishes them at the linked repository, and the fetch script can
-be pointed at the unminified dist files where upstream provides them.
+project above publishes them at the linked repository. Packagers can replace
+the minified artifacts with unminified dist files where upstream provides them.

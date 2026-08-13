@@ -1,6 +1,8 @@
 package vn.bizreader.connect
 
 import android.content.Intent
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import java.io.File
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -25,9 +27,19 @@ class MainActivity : FlutterActivity() {
                 return@setMethodCallHandler
             }
 
+            val file = File(path)
+            val uri = runCatching {
+                FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            }.getOrElse {
+                result.error("FILE_ACCESS", "Không thể cấp quyền đọc tệp đã chọn.", null)
+                return@setMethodCallHandler
+            }
+            val mime = MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
             startActivity(
                 Intent(this, ViewerActivity::class.java)
-                    .putExtra(ViewerActivity.EXTRA_PATH, path),
+                    .setDataAndType(uri, mime)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
             )
             result.success(null)
         }

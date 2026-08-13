@@ -13,9 +13,12 @@
 #include <esp_task_wdt.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <new>
+#include <unordered_set>
 #include <vector>
 
 #include "BizBookUploadHandler.h"
@@ -35,6 +38,7 @@ constexpr size_t SYNC_FRAME_SIZE = 240;
 constexpr size_t SYNC_FRAME_HEADER_SIZE = 4;
 constexpr size_t SYNC_FRAME_PAYLOAD_SIZE = SYNC_FRAME_SIZE - SYNC_FRAME_HEADER_SIZE;
 constexpr unsigned long SYNC_READ_WINDOW_MS = 30UL * 1000UL;
+constexpr unsigned long SYNC_RECEIVE_IDLE_TIMEOUT_MS = 30UL * 1000UL;
 
 enum class TransferState : uint8_t { Idle, Connecting, Ready, Uploading, Complete, SyncReceiving, SyncReady, Error };
 
@@ -89,8 +93,9 @@ class BizTransferService::Impl {
 
     void onDisconnect(NimBLEServer*, NimBLEConnInfo&, int reason) override {
       impl.bleConnected.store(false);
+      impl.bleDisconnectedPending.store(true);
       LOG_INF("BIZ", "BLE client disconnected (reason=%d)", reason);
-      NimBLEDevice::startAdvertising();
+      if (!impl.bleStopping.load()) NimBLEDevice::startAdvertising();
     }
 
    private:
@@ -122,20 +127,7 @@ class BizTransferService::Impl {
 
     void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
       const std::string value = characteristic->getValue();
-      if (value.size() <= SYNC_FRAME_HEADER_SIZE || impl.state != TransferState::SyncReceiving) return;
-      const uint16_t sequence =
-          static_cast<uint8_t>(value[0]) | (static_cast<uint16_t>(static_cast<uint8_t>(value[1])) << 8);
-      const uint16_t total =
-          static_cast<uint8_t>(value[2]) | (static_cast<uint16_t>(static_cast<uint8_t>(value[3])) << 8);
-      const size_t payloadSize = value.size() - SYNC_FRAME_HEADER_SIZE;
-      if (sequence != impl.syncExpectedSequence || total != impl.syncIncomingChunks ||
-          impl.syncIncomingReceived + payloadSize > impl.syncIncoming.size()) {
-        impl.syncIncomingError = true;
-        return;
-      }
-      memcpy(impl.syncIncoming.data() + impl.syncIncomingReceived, value.data() + SYNC_FRAME_HEADER_SIZE, payloadSize);
-      impl.syncIncomingReceived += payloadSize;
-      ++impl.syncExpectedSequence;
+      impl.acceptSyncFrame(value);
     }
 
    private:
@@ -146,30 +138,114 @@ class BizTransferService::Impl {
    public:
     explicit SyncTxCallbacks(Impl& impl) : impl(impl) {}
 
-    void onRead(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override {
-      if (impl.syncOutgoing.empty() || impl.syncOutgoingSequence >= impl.syncOutgoingChunks) {
-        characteristic->setValue(static_cast<const uint8_t*>(nullptr), 0);
-        return;
-      }
-      const size_t remaining = impl.syncOutgoing.size() - impl.syncOutgoingOffset;
-      const size_t payloadSize = std::min(remaining, impl.syncOutgoingPayloadSize);
-      uint8_t frame[SYNC_FRAME_SIZE];
-      frame[0] = impl.syncOutgoingSequence & 0xff;
-      frame[1] = (impl.syncOutgoingSequence >> 8) & 0xff;
-      frame[2] = impl.syncOutgoingChunks & 0xff;
-      frame[3] = (impl.syncOutgoingChunks >> 8) & 0xff;
-      memcpy(frame + SYNC_FRAME_HEADER_SIZE, impl.syncOutgoing.data() + impl.syncOutgoingOffset, payloadSize);
-      characteristic->setValue(frame, payloadSize + SYNC_FRAME_HEADER_SIZE);
-      impl.syncOutgoingOffset += payloadSize;
-      ++impl.syncOutgoingSequence;
-    }
+    void onRead(NimBLECharacteristic* characteristic, NimBLEConnInfo&) override { impl.readSyncFrame(characteristic); }
 
    private:
     Impl& impl;
   };
 
+  void clearIncomingLocked() {
+    std::fill(syncIncoming.begin(), syncIncoming.end(), 0);
+    std::vector<uint8_t>().swap(syncIncoming);
+    syncIncomingReceived = 0;
+    syncIncomingChunks = 0;
+    syncExpectedSequence = 0;
+    syncIncomingError = false;
+  }
+
+  void clearOutgoingLocked() {
+    std::fill(syncOutgoing.begin(), syncOutgoing.end(), '\0');
+    std::string().swap(syncOutgoing);
+    syncOutgoingOffset = 0;
+    syncOutgoingSequence = 0;
+    syncOutgoingChunks = 0;
+  }
+
+  void resetSyncSession() {
+    std::lock_guard<std::mutex> lock(syncMutex);
+    clearIncomingLocked();
+    clearOutgoingLocked();
+    syncLastActivityAt.store(0);
+  }
+
+  void setSyncError(const char* errorMessage) {
+    resetSyncSession();
+    setStatus(TransferState::Error, errorMessage);
+  }
+
+  bool beginSyncReceive(const size_t size, const uint16_t chunks) {
+    std::vector<uint8_t> incoming(size, 0);
+    std::lock_guard<std::mutex> lock(syncMutex);
+    clearIncomingLocked();
+    clearOutgoingLocked();
+    syncIncoming.swap(incoming);
+    syncIncomingChunks = chunks;
+    syncLastActivityAt.store(millis());
+    return syncIncoming.size() == size;
+  }
+
+  void acceptSyncFrame(const std::string& value) {
+    if (value.size() <= SYNC_FRAME_HEADER_SIZE || state.load() != TransferState::SyncReceiving) return;
+
+    const uint16_t sequence =
+        static_cast<uint8_t>(value[0]) | (static_cast<uint16_t>(static_cast<uint8_t>(value[1])) << 8);
+    const uint16_t total =
+        static_cast<uint8_t>(value[2]) | (static_cast<uint16_t>(static_cast<uint8_t>(value[3])) << 8);
+    const size_t payloadSize = value.size() - SYNC_FRAME_HEADER_SIZE;
+    std::lock_guard<std::mutex> lock(syncMutex);
+    if (state.load() != TransferState::SyncReceiving || sequence != syncExpectedSequence ||
+        total != syncIncomingChunks || syncIncomingReceived + payloadSize > syncIncoming.size()) {
+      syncIncomingError = true;
+      syncLastActivityAt.store(millis());
+      return;
+    }
+    memcpy(syncIncoming.data() + syncIncomingReceived, value.data() + SYNC_FRAME_HEADER_SIZE, payloadSize);
+    syncIncomingReceived += payloadSize;
+    ++syncExpectedSequence;
+    syncLastActivityAt.store(millis());
+  }
+
+  void readSyncFrame(NimBLECharacteristic* characteristic) {
+    std::lock_guard<std::mutex> lock(syncMutex);
+    if (state.load() != TransferState::SyncReady || syncOutgoing.empty() ||
+        syncOutgoingSequence >= syncOutgoingChunks) {
+      characteristic->setValue(static_cast<const uint8_t*>(nullptr), 0);
+      return;
+    }
+    const size_t remaining = syncOutgoing.size() - syncOutgoingOffset;
+    const size_t payloadSize = std::min(remaining, syncOutgoingPayloadSize);
+    uint8_t frame[SYNC_FRAME_SIZE];
+    frame[0] = syncOutgoingSequence & 0xff;
+    frame[1] = (syncOutgoingSequence >> 8) & 0xff;
+    frame[2] = syncOutgoingChunks & 0xff;
+    frame[3] = (syncOutgoingChunks >> 8) & 0xff;
+    memcpy(frame + SYNC_FRAME_HEADER_SIZE, syncOutgoing.data() + syncOutgoingOffset, payloadSize);
+    characteristic->setValue(frame, payloadSize + SYNC_FRAME_HEADER_SIZE);
+    syncOutgoingOffset += payloadSize;
+    ++syncOutgoingSequence;
+    syncLastActivityAt.store(millis());
+  }
+
+  bool takeCompletedIncoming(std::vector<uint8_t>& incoming, std::string& error) {
+    std::lock_guard<std::mutex> lock(syncMutex);
+    if (syncIncomingError || syncIncoming.empty() || syncIncomingReceived != syncIncoming.size() ||
+        syncExpectedSequence != syncIncomingChunks) {
+      error = "Dữ liệu BLE chưa đầy đủ";
+      return false;
+    }
+    incoming.swap(syncIncoming);
+    syncIncomingReceived = 0;
+    syncIncomingChunks = 0;
+    syncExpectedSequence = 0;
+    syncIncomingError = false;
+    return true;
+  }
+
   void begin() {
     if (bleStarted) return;
+
+    bleStopping.store(false);
+    bleDisconnectedPending.store(false);
 
     WIFI_STORE.loadFromFile();
 
@@ -234,6 +310,7 @@ class BizTransferService::Impl {
   }
 
   void stop() {
+    bleStopping.store(true);
     stopTransfer();
     if (bleStarted) {
       NimBLEDevice::deinit();
@@ -260,10 +337,24 @@ class BizTransferService::Impl {
     token[0] = '\0';
     uploadReceived = 0;
     uploadTotal = 0;
+    requestId[0] = '\0';
+    resetSyncSession();
     setStatus(TransferState::Idle, "Đã tắt truyền sách");
   }
 
   void loop() {
+    if (bleDisconnectedPending.exchange(false)) {
+      portENTER_CRITICAL(&commandMux);
+      commandPending = false;
+      portEXIT_CRITICAL(&commandMux);
+      const TransferState disconnectedState = state.load();
+      if (disconnectedState == TransferState::SyncReceiving || disconnectedState == TransferState::SyncReady) {
+        requestId[0] = '\0';
+        resetSyncSession();
+        setStatus(TransferState::Idle, "Đã hủy phiên đồng bộ BLE");
+      }
+    }
+
     char command[COMMAND_BUFFER_SIZE] = {};
     portENTER_CRITICAL(&commandMux);
     if (commandPending) {
@@ -273,7 +364,8 @@ class BizTransferService::Impl {
     portEXIT_CRITICAL(&commandMux);
     if (command[0] != '\0') processCommand(command);
 
-    if (state == TransferState::Connecting) {
+    const TransferState currentState = state.load();
+    if (currentState == TransferState::Connecting) {
       if (WiFi.status() == WL_CONNECTED) {
         onWifiConnected();
       } else if (millis() - connectionStartedAt >= WIFI_CONNECT_TIMEOUT_MS) {
@@ -292,10 +384,29 @@ class BizTransferService::Impl {
         }
       }
 
-      if (state != TransferState::Uploading && millis() - lastSessionActivityAt >= TRANSFER_IDLE_TIMEOUT_MS) {
+      if (state.load() != TransferState::Uploading && millis() - lastSessionActivityAt >= TRANSFER_IDLE_TIMEOUT_MS) {
         LOG_INF("BIZ", "Transfer window expired");
         stopTransfer();
       }
+    }
+
+    const unsigned long syncActivityAt = syncLastActivityAt.load();
+    const TransferState syncState = state.load();
+    bool receiveError = false;
+    if (syncState == TransferState::SyncReceiving) {
+      std::lock_guard<std::mutex> lock(syncMutex);
+      receiveError = syncIncomingError;
+    }
+    if (receiveError) {
+      setSyncError("Khung dữ liệu BLE không hợp lệ");
+    } else if (syncState == TransferState::SyncReceiving && syncActivityAt > 0 &&
+               millis() - syncActivityAt >= SYNC_RECEIVE_IDLE_TIMEOUT_MS) {
+      setSyncError("Phiên nhận BLE đã hết thời gian");
+    } else if (syncState == TransferState::SyncReady && syncActivityAt > 0 &&
+               millis() - syncActivityAt >= SYNC_READ_WINDOW_MS) {
+      requestId[0] = '\0';
+      resetSyncSession();
+      setStatus(TransferState::Idle, "Phiên đồng bộ BLE đã đóng");
     }
   }
 
@@ -304,28 +415,35 @@ class BizTransferService::Impl {
     const DeserializationError error = deserializeJson(document, command);
     if (error) {
       requestId[0] = '\0';
-      setStatus(TransferState::Error, "Lệnh BLE không hợp lệ");
+      setSyncError("Lệnh BLE không hợp lệ");
       return;
     }
 
     const char* incomingRequestId = document["request"] | "";
     if (strlen(incomingRequestId) > 24) {
       requestId[0] = '\0';
-      setStatus(TransferState::Error, "Mã yêu cầu không hợp lệ");
+      setSyncError("Mã yêu cầu không hợp lệ");
       return;
     }
-    strlcpy(requestId, incomingRequestId, sizeof(requestId));
-
     const char* operation = document["op"] | "";
     if (strcmp(operation, "ping") == 0) {
+      strlcpy(requestId, incomingRequestId, sizeof(requestId));
       publishStatus();
       return;
     }
     if (strcmp(operation, "stop") == 0) {
+      strlcpy(requestId, incomingRequestId, sizeof(requestId));
       stopTransfer();
       return;
     }
     if (strcmp(operation, "start") == 0) {
+      const TransferState currentState = state.load();
+      if (currentState != TransferState::Idle && currentState != TransferState::Error) {
+        LOG_INF("BIZ", "Ignoring Wi-Fi start while transfer state is %s", stateName(currentState));
+        publishStatus();
+        return;
+      }
+      strlcpy(requestId, incomingRequestId, sizeof(requestId));
       const std::string& lastSsid = WIFI_STORE.getLastConnectedSsid();
       const WifiCredential* credential = WIFI_STORE.findCredential(lastSsid);
       if (lastSsid.empty() || !credential) {
@@ -336,51 +454,70 @@ class BizTransferService::Impl {
       return;
     }
     if (strcmp(operation, "sync_pull") == 0) {
+      const TransferState currentState = state.load();
+      if (currentState != TransferState::Idle && currentState != TransferState::Error) {
+        LOG_INF("BIZ", "Ignoring sync pull while transfer state is %s", stateName(currentState));
+        publishStatus();
+        return;
+      }
+      strlcpy(requestId, incomingRequestId, sizeof(requestId));
       const size_t frameSize = document["frameSize"] | SYNC_FRAME_SIZE;
-      syncOutgoingPayloadSize =
-          std::clamp(frameSize, SYNC_FRAME_HEADER_SIZE + 16, SYNC_FRAME_SIZE) - SYNC_FRAME_HEADER_SIZE;
+      {
+        std::lock_guard<std::mutex> lock(syncMutex);
+        syncOutgoingPayloadSize =
+            std::clamp(frameSize, SYNC_FRAME_HEADER_SIZE + 16, SYNC_FRAME_SIZE) - SYNC_FRAME_HEADER_SIZE;
+      }
       if (!prepareSyncSnapshot()) {
-        setStatus(TransferState::Error, "Không tạo được dữ liệu đồng bộ");
+        setSyncError("Không tạo được dữ liệu đồng bộ");
         return;
       }
       setStatus(TransferState::SyncReady, "Sẵn sàng gửi dữ liệu BLE");
       return;
     }
     if (strcmp(operation, "sync_begin") == 0) {
+      strlcpy(requestId, incomingRequestId, sizeof(requestId));
+      if (state.load() != TransferState::SyncReady) {
+        setSyncError("Hãy đọc snapshot trước khi gửi dữ liệu");
+        return;
+      }
       const size_t size = document["size"] | 0;
       const uint16_t chunks = document["chunks"] | 0;
       if (size == 0 || size > SYNC_MAX_JSON_SIZE || chunks == 0 || chunks > size) {
-        setStatus(TransferState::Error, "Kích thước đồng bộ không hợp lệ");
+        setSyncError("Kích thước đồng bộ không hợp lệ");
         return;
       }
-      syncIncoming.assign(size, 0);
-      syncIncomingReceived = 0;
-      syncIncomingChunks = chunks;
-      syncExpectedSequence = 0;
-      syncIncomingError = false;
+      if (!beginSyncReceive(size, chunks)) {
+        setSyncError("Không đủ bộ nhớ nhận dữ liệu BLE");
+        return;
+      }
       setStatus(TransferState::SyncReceiving, "Đang nhận dữ liệu BLE");
       return;
     }
     if (strcmp(operation, "sync_commit") == 0) {
-      if (syncIncomingError || syncIncomingReceived != syncIncoming.size() ||
-          syncExpectedSequence != syncIncomingChunks) {
-        setStatus(TransferState::Error, "Dữ liệu BLE chưa đầy đủ");
+      strlcpy(requestId, incomingRequestId, sizeof(requestId));
+      if (state.load() != TransferState::SyncReceiving) {
+        setSyncError("Không có phiên nhận BLE để hoàn tất");
         return;
       }
+      std::vector<uint8_t> incoming;
       std::string error;
-      if (!applySyncSnapshot(error)) {
-        setStatus(TransferState::Error, error.c_str());
+      const bool complete = takeCompletedIncoming(incoming, error);
+      const bool applied = complete && applySyncSnapshot(incoming, error);
+      std::fill(incoming.begin(), incoming.end(), 0);
+      if (!applied) {
+        setSyncError(error.c_str());
         return;
       }
       if (!prepareSyncSnapshot()) {
-        setStatus(TransferState::Error, "Không đọc lại được dữ liệu đồng bộ");
+        setSyncError("Không đọc lại được dữ liệu đồng bộ");
         return;
       }
       setStatus(TransferState::SyncReady, "Đồng bộ BLE hoàn tất");
       return;
     }
 
-    setStatus(TransferState::Error, "Lệnh BLE không được hỗ trợ");
+    strlcpy(requestId, incomingRequestId, sizeof(requestId));
+    setSyncError("Lệnh BLE không được hỗ trợ");
   }
 
   bool prepareSyncSnapshot() {
@@ -405,6 +542,7 @@ class BizTransferService::Impl {
       deleted["todos"].to<JsonArray>();
     }
     JsonArray progressItems = snapshot["progress"].to<JsonArray>();
+    if (measureJson(snapshot) > SYNC_MAX_JSON_SIZE) return false;
     for (const BizReadingProgress& progress : BizReadingProgressStore::list()) {
       JsonObject item = progressItems.add<JsonObject>();
       item["filename"] = progress.filename;
@@ -414,31 +552,66 @@ class BizTransferService::Impl {
       item["pageCount"] = progress.pageCount;
       item["pending"] = progress.pending;
       item["updatedAt"] = progress.updatedAt;
+      if (measureJson(snapshot) > SYNC_MAX_JSON_SIZE) {
+        progressItems.remove(progressItems.size() - 1);
+        break;
+      }
     }
-    syncOutgoing.clear();
-    serializeJson(snapshot, syncOutgoing);
-    if (syncOutgoing.empty() || syncOutgoing.size() > SYNC_MAX_JSON_SIZE) return false;
-    syncOutgoingOffset = 0;
-    syncOutgoingSequence = 0;
+    std::string outgoing;
+    serializeJson(snapshot, outgoing);
+    if (outgoing.empty() || outgoing.size() > SYNC_MAX_JSON_SIZE) return false;
+
+    std::lock_guard<std::mutex> lock(syncMutex);
+    clearOutgoingLocked();
+    syncOutgoing.swap(outgoing);
     syncOutgoingChunks =
         static_cast<uint16_t>((syncOutgoing.size() + syncOutgoingPayloadSize - 1) / syncOutgoingPayloadSize);
+    syncLastActivityAt.store(millis());
     return true;
   }
 
-  bool applySyncSnapshot(std::string& error) {
+  bool applySyncSnapshot(const std::vector<uint8_t>& incoming, std::string& error) {
     JsonDocument snapshot;
-    if (deserializeJson(snapshot, syncIncoming.data(), syncIncoming.size()) || (snapshot["protocol"] | 0) != 2 ||
+    if (deserializeJson(snapshot, incoming.data(), incoming.size()) || (snapshot["protocol"] | 0) != 2 ||
         !snapshot["content"].is<JsonObjectConst>() || !snapshot["progress"].is<JsonArrayConst>()) {
       error = "Dữ liệu đồng bộ không hợp lệ";
       return false;
     }
-    String contentJson;
-    serializeJson(snapshot["content"], contentJson);
-    if (!BizContentStore::saveJson(std::string(contentJson.c_str(), contentJson.length()), error)) return false;
 
-    int count = 0;
+    const JsonObjectConst content = snapshot["content"].as<JsonObjectConst>();
+    const int contentVersion = content["version"] | 0;
+    if ((contentVersion != 1 && contentVersion != 2) || !content["notes"].is<JsonArrayConst>() ||
+        !content["todos"].is<JsonArrayConst>() || !content["events"].is<JsonArrayConst>() ||
+        !content["weather"].is<JsonObjectConst>() || !content["sleep"].is<JsonObjectConst>() ||
+        content["notes"].size() > 40 || content["todos"].size() > 60 || content["events"].size() > 60) {
+      error = "Nội dung đồng bộ không hợp lệ";
+      return false;
+    }
+    const std::string sleepMode = content["sleep"]["mode"] | "calendar";
+    if (sleepMode != "calendar" && sleepMode != "photo") {
+      error = "Chế độ nền nghỉ không hợp lệ";
+      return false;
+    }
+    if (contentVersion >= 2 &&
+        (!content["deleted"].is<JsonObjectConst>() || !content["deleted"]["notes"].is<JsonArrayConst>() ||
+         !content["deleted"]["todos"].is<JsonArrayConst>() || content["deleted"]["notes"].size() > 80 ||
+         content["deleted"]["todos"].size() > 120)) {
+      error = "Dữ liệu đã xóa không hợp lệ";
+      return false;
+    }
+
+    String contentJson;
+    serializeJson(content, contentJson);
+    if (contentJson.isEmpty() || contentJson.length() > BizContentStore::MAX_JSON_SIZE) {
+      error = "Nội dung đồng bộ quá lớn";
+      return false;
+    }
+
+    std::vector<BizReadingProgress> progressItems;
+    progressItems.reserve(std::min<size_t>(snapshot["progress"].size(), 100));
+    std::unordered_set<std::string> progressFilenames;
     for (const JsonObjectConst item : snapshot["progress"].as<JsonArrayConst>()) {
-      if (++count > 100) {
+      if (progressItems.size() >= 100) {
         error = "Quá nhiều tiến độ đọc";
         return false;
       }
@@ -451,8 +624,31 @@ class BizTransferService::Impl {
       progress.pending = item["pending"] | false;
       progress.updatedAt = item["updatedAt"] | uint64_t{0};
       if (progress.filename.empty() || progress.filename.size() > 191 ||
-          progress.filename.find('/') != std::string::npos || progress.percentage < 0.0f ||
-          progress.percentage > 1.0f || !BizReadingProgressStore::save(progress)) {
+          progress.filename.find('/') != std::string::npos || progress.filename.find('\\') != std::string::npos ||
+          !std::isfinite(progress.percentage) || progress.percentage < 0.0f || progress.percentage > 1.0f ||
+          progress.spineIndex < 0 || progress.pageNumber < 0 || progress.pageCount < 0 ||
+          !progressFilenames.insert(progress.filename).second) {
+        error = "Tiến độ đọc không hợp lệ";
+        return false;
+      }
+      progressItems.push_back(std::move(progress));
+    }
+
+    // A v1 progress file has no timestamp. Preserve an actual device reading
+    // position over a freshly imported 0% App record during the first v2 sync.
+    for (BizReadingProgress& progress : progressItems) {
+      BizReadingProgress existing;
+      if (!BizReadingProgressStore::load(progress.filename, existing)) continue;
+      const bool existingHasPosition =
+          existing.percentage > 0.0f || existing.spineIndex > 0 || existing.pageNumber > 0 || existing.pageCount > 0;
+      const bool incomingIsUnopened = progress.percentage == 0.0f && progress.spineIndex == 0 &&
+                                      progress.pageNumber == 0 && progress.pageCount == 0;
+      if (existing.updatedAt == 0 && existingHasPosition && incomingIsUnopened) progress = existing;
+    }
+
+    if (!BizContentStore::saveJson(std::string(contentJson.c_str(), contentJson.length()), error)) return false;
+    for (const BizReadingProgress& progress : progressItems) {
+      if (!BizReadingProgressStore::save(progress)) {
         error = "Không lưu được tiến độ đọc";
         return false;
       }
@@ -478,7 +674,7 @@ class BizTransferService::Impl {
     WiFi.begin(pendingSsid, pendingPassword[0] == '\0' ? nullptr : pendingPassword);
     connectionStartedAt = millis();
     setStatus(TransferState::Connecting, "Đang kết nối Wi-Fi");
-    LOG_INF("BIZ", "Connecting to Wi-Fi: %s", pendingSsid);
+    LOG_INF("BIZ", "Connecting to saved Wi-Fi network");
   }
 
   void onWifiConnected() {
@@ -616,7 +812,7 @@ class BizTransferService::Impl {
   }
 
   void setStatus(TransferState newState, const char* newMessage) {
-    state = newState;
+    state.store(newState);
     if (newState == TransferState::SyncReady) syncReadyAt = millis();
     strlcpy(message, newMessage ? newMessage : "", sizeof(message));
     publishStatus();
@@ -625,7 +821,8 @@ class BizTransferService::Impl {
   void buildStatusJson(char* output, size_t outputSize, bool includeToken) const {
     JsonDocument document;
     document["protocol"] = 2;
-    document["state"] = stateName(state);
+    const TransferState currentState = state.load();
+    document["state"] = stateName(currentState);
     document["device"] = deviceName;
     document["message"] = message;
     if (requestId[0] != '\0') document["request"] = requestId;
@@ -640,7 +837,7 @@ class BizTransferService::Impl {
     }
     if (lastFilename[0] != '\0') document["filename"] = lastFilename;
     if (lastSha256[0] != '\0') document["sha256"] = lastSha256;
-    if (state == TransferState::SyncReady) {
+    if (currentState == TransferState::SyncReady) {
       document["syncChunks"] = syncOutgoingChunks;
       document["syncSize"] = syncOutgoing.size();
     }
@@ -703,8 +900,10 @@ class BizTransferService::Impl {
   NimBLECharacteristic* syncTxCharacteristic = nullptr;
   std::unique_ptr<WebServer> httpServer;
   std::atomic<bool> bleConnected{false};
+  std::atomic<bool> bleDisconnectedPending{false};
+  std::atomic<bool> bleStopping{false};
   bool bleStarted = false;
-  TransferState state = TransferState::Idle;
+  std::atomic<TransferState> state{TransferState::Idle};
   unsigned long connectionStartedAt = 0;
   unsigned long lastSessionActivityAt = 0;
   unsigned long syncReadyAt = 0;
@@ -721,6 +920,8 @@ class BizTransferService::Impl {
   portMUX_TYPE commandMux = portMUX_INITIALIZER_UNLOCKED;
   volatile bool commandPending = false;
   char pendingCommand[COMMAND_BUFFER_SIZE] = {};
+  mutable std::mutex syncMutex;
+  std::atomic<unsigned long> syncLastActivityAt{0};
   std::vector<uint8_t> syncIncoming;
   size_t syncIncomingReceived = 0;
   uint16_t syncIncomingChunks = 0;
@@ -761,10 +962,12 @@ void BizTransferService::stop() {
 
 bool BizTransferService::isBusy() const {
 #ifdef FREEINK_DEVICE_LILYGO_EPD47
-  return impl && (impl->state == TransferState::Connecting || impl->state == TransferState::Ready ||
-                  impl->state == TransferState::Uploading || impl->state == TransferState::Complete ||
-                  impl->state == TransferState::SyncReceiving ||
-                  (impl->state == TransferState::SyncReady && millis() - impl->syncReadyAt < SYNC_READ_WINDOW_MS));
+  if (!impl) return false;
+  const TransferState currentState = impl->state.load();
+  return currentState == TransferState::Connecting || currentState == TransferState::Ready ||
+         currentState == TransferState::Uploading || currentState == TransferState::Complete ||
+         currentState == TransferState::SyncReceiving ||
+         (currentState == TransferState::SyncReady && millis() - impl->syncReadyAt < SYNC_READ_WINDOW_MS);
 #else
   return false;
 #endif

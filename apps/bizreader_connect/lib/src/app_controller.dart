@@ -302,7 +302,7 @@ class AppController extends ChangeNotifier {
             book.copyWith(
               progress: progress.percentage,
               chapterNumber: progress.spineIndex + 1,
-              chapterProgress: 0,
+              chapterProgress: progress.chapterProgressPercent,
               clearEpubCfi: progress.updatedAt > book.updatedAt,
               updatedAt: progress.updatedAt,
             )
@@ -338,7 +338,23 @@ class AppController extends ChangeNotifier {
   }
 
   Future<LocalBook> importBook(File file, String originalFilename) async {
-    final imported = await _bookLibrary.importEpub(file, originalFilename);
+    var imported = await _bookLibrary.importEpub(file, originalFilename);
+    final previousIndex = books.indexWhere((book) => book.id == imported.id);
+    if (previousIndex >= 0) {
+      final previous = books[previousIndex];
+      imported = imported.copyWith(
+        remoteFilename: previous.remoteFilename,
+        progress: previous.progress,
+        epubCfi: previous.epubCfi,
+        chapterNumber: previous.chapterNumber,
+        chapterProgress: previous.chapterProgress,
+        updatedAt: previous.updatedAt,
+      );
+    } else {
+      imported = imported.copyWith(
+        remoteFilename: _uniqueRemoteFilename(imported),
+      );
+    }
     final updated = [
       ...books.where((book) => book.id != imported.id),
       imported,
@@ -347,6 +363,28 @@ class AppController extends ChangeNotifier {
     await _bookLibrary.save(books);
     notifyListeners();
     return imported;
+  }
+
+  String _uniqueRemoteFilename(LocalBook imported) {
+    final used = {
+      for (final book in books.where((book) => book.id != imported.id))
+        book.remoteFilename.toLowerCase(),
+    };
+    final original = imported.remoteFilename;
+    if (!used.contains(original.toLowerCase())) return original;
+
+    final dot = original.lastIndexOf('.');
+    final stem = dot > 0 ? original.substring(0, dot) : original;
+    final extension = dot > 0 ? original.substring(dot) : '';
+    for (final length in const [8, 12, 16, 24, 32, 64]) {
+      final suffixLength = length < imported.id.length
+          ? length
+          : imported.id.length;
+      final candidate =
+          '$stem-${imported.id.substring(0, suffixLength)}$extension';
+      if (!used.contains(candidate.toLowerCase())) return candidate;
+    }
+    return '$stem-${imported.id}$extension';
   }
 
   Future<void> openDocument(File file) => _fileViewer.open(file);
@@ -409,7 +447,7 @@ class AppController extends ChangeNotifier {
       book.id,
       progress: progress.percentage,
       chapterNumber: progress.spineIndex + 1,
-      chapterProgress: 0,
+      chapterProgress: progress.chapterProgressPercent,
       clearEpubCfi: true,
     );
   }
@@ -507,7 +545,22 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> finishTransfer() => _bleClient.stopTransfer();
+  Future<void> finishTransfer() async {
+    try {
+      await _bleClient.stopTransfer();
+    } finally {
+      if (device.usesBizTransfer) {
+        device = DeviceConfig(
+          name: device.name,
+          host: device.host,
+          bleId: device.bleId,
+        );
+        connectionState = DeviceConnectionState.unknown;
+        connectionMessage = 'Phiên truyền đã đóng.';
+        notifyListeners();
+      }
+    }
+  }
 
   Future<void> checkConnection() async {
     if (!device.isConfigured) {
@@ -540,7 +593,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> forgetDevice() async {
-    await _bleClient.disconnect();
+    await _bleClient.stopTransfer();
     await _preferences.clear();
     device = const DeviceConfig(name: 'BizReader', host: '');
     connectionState = DeviceConnectionState.unknown;

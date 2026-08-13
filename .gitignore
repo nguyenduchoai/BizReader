@@ -26,3 +26,10 @@ lib/EpdFont/scripts/output/
 
 # Vendor reference clone (GPL-3.0), used for bring-up only — not part of the build
 /LilyGo-EPD47/
+
+# Personal books copied to the SD card for device testing
+/Ebook/
+
+# Local/CI firmware release staging
+/.release-source/
+/.release-assets/
