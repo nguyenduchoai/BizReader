@@ -61,3 +61,30 @@ Chức năng cập nhật thời tiết theo tên thành phố sử dụng API v
 CC BY 4.0 và cần ghi công Open-Meteo. Endpoint miễn phí chỉ dành cho mục đích
 phi thương mại theo điều khoản của nhà cung cấp; bản phân phối thương mại phải
 dùng gói/endpoint có giấy phép phù hợp hoặc thay dịch vụ trước khi phát hành.
+
+## Trình đọc EPUB trên Android
+
+Ứng dụng BizReader dùng một fork nội bộ đã gia cố của
+`flutter_epub_viewer` 2.0.0 (BSD-3-Clause), kết hợp `epub.js` 0.3.93
+(BSD-2-Clause), JSZip 3.10.1 (chọn giấy phép MIT từ lựa chọn kép MIT/GPL-3.0)
+và pako 1.0.5 (MIT) để phân trang EPUB hoàn toàn trên thiết bị. Fork BizReader
+đã thay JSZip 3.1.5 của upstream bằng bản 3.10.1, tắt script trong sách, từ chối
+yêu cầu quyền WebView, chặn tải mạng và chặn điều hướng ra ngoài trình đọc.
+
+Giấy phép của `flutter_epub_viewer` nằm tại
+`apps/bizreader_connect/packages/flutter_epub_viewer/LICENSE` và được hiển thị
+trong màn hình giấy phép của ứng dụng cùng giấy phép `epub.js`, JSZip và pako.
+Bundle `epub.js` còn chứa mã runtime từ `@xmldom/xmldom`, `event-emitter`,
+`d`, `es5-ext`, `type`, lodash, localForage (kèm lie/immediate), `marks-pane`
+và `path-webpack`. Danh mục bằng chứng phiên bản, nguồn npm chính xác và toàn
+bộ thông báo/giấy phép bắt buộc được đóng gói tại
+`apps/bizreader_connect/packages/flutter_epub_viewer/EPUBJS_THIRD_PARTY_NOTICES.md`
+và hiển thị trong màn hình giấy phép. Thông báo bản quyền của JSZip cũng được
+giữ nguyên trong tệp phân phối `jszip.min.js`.
+
+Trên Android, BizReader giữ một bản vá nội bộ tối thiểu của
+`flutter_inappwebview_android` 1.1.3 (Apache-2.0) để dùng cấu hình ProGuard được
+AGP 9 hỗ trợ. Ngoài thay đổi cấu hình build này, mã nguồn vẫn tương ứng với bản
+upstream 1.1.3. Giấy phép được giữ tại
+`apps/bizreader_connect/packages/flutter_inappwebview_android/LICENSE` và được
+hiển thị trong màn hình giấy phép của ứng dụng.

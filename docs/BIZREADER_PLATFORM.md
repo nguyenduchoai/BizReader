@@ -53,7 +53,9 @@ dụng. Cần UAT đúng revision phần cứng trước khi thay đổi pin map
 ### Android
 
 - Flutter quản lý Tổng quan, Thư viện, Tiện ích và Thiết bị.
-- EPUB được nhập vào vùng dữ liệu riêng của App và đọc bằng `epub_view`.
+- EPUB được nhập vào vùng dữ liệu riêng của App và phân trang ngang bằng fork
+  `flutter_epub_viewer` đã gia cố. App giữ CFI, vị trí chương/trang, mục lục,
+  dấu trang và tùy chọn đọc; script và tải mạng từ nội dung sách bị chặn.
 - `BizTransferBleClient` kéo snapshot, hợp nhất theo `updatedAt`, đẩy snapshot
   kết quả về máy và đọc lại để xác nhận.
 - `WebDavDeviceClient` dùng token BizTransfer hoặc cấu hình WebDAV thủ công để

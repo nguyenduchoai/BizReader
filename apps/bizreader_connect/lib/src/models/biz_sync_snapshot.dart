@@ -31,7 +31,10 @@ class BizSyncSnapshot {
     List<DeviceReadingProgress> remote,
   ) {
     bool hasReadingPosition(DeviceReadingProgress item) =>
-        item.percentage > 0 || item.spineIndex > 0 || item.pageNumber > 0;
+        item.percentage > 0 ||
+        item.spineIndex > 0 ||
+        item.pageNumber > 0 ||
+        item.pageCount > 0;
 
     final merged = <String, DeviceReadingProgress>{};
     for (final item in remote) {

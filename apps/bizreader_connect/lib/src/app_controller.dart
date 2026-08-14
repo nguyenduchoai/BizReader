@@ -287,6 +287,8 @@ class AppController extends ChangeNotifier {
                 filename: book.remoteFilename,
                 percentage: book.progress,
                 spineIndex: book.chapterNumber > 0 ? book.chapterNumber - 1 : 0,
+                pageNumber: book.pageNumber,
+                pageCount: book.pageCount,
                 updatedAt: book.updatedAt,
               ),
           ],
@@ -303,6 +305,8 @@ class AppController extends ChangeNotifier {
               progress: progress.percentage,
               chapterNumber: progress.spineIndex + 1,
               chapterProgress: progress.chapterProgressPercent,
+              pageNumber: progress.pageNumber,
+              pageCount: progress.pageCount,
               clearEpubCfi: progress.updatedAt > book.updatedAt,
               updatedAt: progress.updatedAt,
             )
@@ -348,6 +352,8 @@ class AppController extends ChangeNotifier {
         epubCfi: previous.epubCfi,
         chapterNumber: previous.chapterNumber,
         chapterProgress: previous.chapterProgress,
+        pageNumber: previous.pageNumber,
+        pageCount: previous.pageCount,
         updatedAt: previous.updatedAt,
       );
     } else {
@@ -394,6 +400,8 @@ class AppController extends ChangeNotifier {
     required double progress,
     required int chapterNumber,
     required double chapterProgress,
+    int? pageNumber,
+    int? pageCount,
     String? epubCfi,
     bool clearEpubCfi = false,
     int? updatedAt,
@@ -407,6 +415,8 @@ class AppController extends ChangeNotifier {
             clearEpubCfi: clearEpubCfi,
             chapterNumber: chapterNumber,
             chapterProgress: chapterProgress.clamp(0, 100),
+            pageNumber: pageNumber?.clamp(0, 1 << 31).toInt(),
+            pageCount: pageCount?.clamp(0, 1 << 31).toInt(),
             updatedAt: updatedAt ?? DateTime.now().millisecondsSinceEpoch,
           )
         else
@@ -418,10 +428,14 @@ class AppController extends ChangeNotifier {
 
   Future<DeviceReadingProgress?> fetchDeviceProgress(LocalBook book) async {
     if (demoMode) {
+      final percentage = (book.progress + 0.09).clamp(0, 1).toDouble();
+      final pageCount = book.pageCount > 1 ? book.pageCount : 101;
       return DeviceReadingProgress(
         filename: book.remoteFilename,
-        percentage: (book.progress + 0.09).clamp(0, 1),
+        percentage: percentage,
         spineIndex: book.chapterNumber,
+        pageNumber: (percentage * (pageCount - 1)).round(),
+        pageCount: pageCount,
       );
     }
     return _withTransferClient(
@@ -448,6 +462,8 @@ class AppController extends ChangeNotifier {
       progress: progress.percentage,
       chapterNumber: progress.spineIndex + 1,
       chapterProgress: progress.chapterProgressPercent,
+      pageNumber: progress.pageNumber,
+      pageCount: progress.pageCount,
       clearEpubCfi: true,
     );
   }

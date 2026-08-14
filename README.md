@@ -28,7 +28,8 @@ Tên hiển thị trên thiết bị là **BizReader**; phần thông tin và m�
 
 - Mở thẳng vào Tổng quan; kết nối thiết bị là một chức năng trong tab Thiết bị,
   không phải bước bắt buộc để dùng App.
-- Nhập và đọc EPUB, lưu tiến độ cục bộ và đồng bộ với máy đọc.
+- Nhập và đọc EPUB theo từng trang lật ngang, có mục lục, dấu trang, tùy chỉnh
+  chữ/nền; lưu tiến độ cục bộ và đồng bộ với máy đọc.
 - Quản lý ghi chú, việc cần làm, lịch, thời tiết và nền nghỉ.
 - Mở ngoại tuyến PDF, DOCX, XLSX/XLS/XLSM/XLSB/CSV/ODS, PPTX, Markdown,
   văn bản/mã nguồn, ảnh, âm thanh và video.

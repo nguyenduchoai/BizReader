@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.7.0+11
+version: 0.8.0+12
 
 environment:
   sdk: ^3.12.0
@@ -42,7 +42,9 @@ dependencies:
   crypto: ^3.0.7
   flutter_reactive_ble: ^5.5.0
   permission_handler: ^11.4.0
-  epub_view: ^3.2.0
+  epubx: 4.0.0
+  flutter_epub_viewer:
+    path: packages/flutter_epub_viewer
   path_provider: ^2.1.6
   image: ^3.3.0
 
@@ -56,6 +58,11 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+dependency_overrides:
+  # Upstream 1.1.3 still selects the AGP-9-incompatible legacy ProGuard file.
+  flutter_inappwebview_android:
+    path: packages/flutter_inappwebview_android
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -72,6 +79,12 @@ flutter:
     - assets/branding/bizreader_logo.png
     - android/app/src/main/assets/viewer/GANDER_LICENSE.txt
     - android/app/src/main/assets/viewer/VENDORED_NOTICES.md
+    - packages/flutter_epub_viewer/LICENSE
+    - packages/flutter_epub_viewer/EPUBJS_LICENSE
+    - packages/flutter_epub_viewer/EPUBJS_THIRD_PARTY_NOTICES.md
+    - packages/flutter_epub_viewer/JSZIP_LICENSE
+    - packages/flutter_epub_viewer/PAKO_LICENSE
+    - packages/flutter_inappwebview_android/LICENSE
 
   # To add assets to your application, add an assets section, like this:
   # assets:

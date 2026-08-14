@@ -177,7 +177,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                         leading: const Icon(Icons.info_outline),
                         title: const Text('Giới thiệu'),
                         subtitle: const Text('BizReader • Hoài Nguyễn'),
-                        trailing: const Text('0.7.0'),
+                        trailing: const Text('0.8.0'),
                         onTap: () => _showAbout(context),
                       ),
                     ],
@@ -235,7 +235,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
     showAboutDialog(
       context: context,
       applicationName: 'BizReader',
-      applicationVersion: '0.7.0',
+      applicationVersion: '0.8.0',
       applicationLegalese: 'Hoài Nguyễn',
       applicationIcon: Image.asset(
         'assets/branding/bizreader_logo.png',

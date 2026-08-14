@@ -46,6 +46,26 @@ void main() {
     expect(progress.chapterProgressPercent, 50);
   });
 
+  test('snapshot JSON roundtrip preserves page position', () {
+    const original = BizSyncSnapshot(
+      content: BizContent(),
+      progress: [
+        DeviceReadingProgress(
+          filename: 'book.epub',
+          percentage: 0.4,
+          pageNumber: 12,
+          pageCount: 25,
+          updatedAt: 1234,
+        ),
+      ],
+    );
+
+    final restored = BizSyncSnapshot.fromJson(original.toJson());
+
+    expect(restored.progress.single.pageNumber, 12);
+    expect(restored.progress.single.pageCount, 25);
+  });
+
   test(
     'legacy device progress beats an untouched old app import timestamp',
     () {

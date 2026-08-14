@@ -9,6 +9,8 @@ class LocalBook {
     this.epubCfi,
     this.chapterNumber = 0,
     this.chapterProgress = 0,
+    this.pageNumber = 0,
+    this.pageCount = 0,
     this.updatedAt = 0,
     this.demo = false,
   });
@@ -22,6 +24,8 @@ class LocalBook {
   final String? epubCfi;
   final int chapterNumber;
   final double chapterProgress;
+  final int pageNumber;
+  final int pageCount;
   final int updatedAt;
   final bool demo;
 
@@ -35,6 +39,8 @@ class LocalBook {
     bool clearEpubCfi = false,
     int? chapterNumber,
     double? chapterProgress,
+    int? pageNumber,
+    int? pageCount,
     int? updatedAt,
   }) {
     return LocalBook(
@@ -47,6 +53,8 @@ class LocalBook {
       epubCfi: clearEpubCfi ? null : epubCfi ?? this.epubCfi,
       chapterNumber: chapterNumber ?? this.chapterNumber,
       chapterProgress: chapterProgress ?? this.chapterProgress,
+      pageNumber: pageNumber ?? this.pageNumber,
+      pageCount: pageCount ?? this.pageCount,
       updatedAt: updatedAt ?? this.updatedAt,
       demo: demo,
     );
@@ -62,6 +70,8 @@ class LocalBook {
     'epubCfi': epubCfi,
     'chapterNumber': chapterNumber,
     'chapterProgress': chapterProgress,
+    'pageNumber': pageNumber,
+    'pageCount': pageCount,
     'updatedAt': updatedAt,
   };
 
@@ -76,6 +86,8 @@ class LocalBook {
       epubCfi: json['epubCfi'] as String?,
       chapterNumber: (json['chapterNumber'] as num?)?.toInt() ?? 0,
       chapterProgress: (json['chapterProgress'] as num?)?.toDouble() ?? 0,
+      pageNumber: (json['pageNumber'] as num?)?.toInt() ?? 0,
+      pageCount: (json['pageCount'] as num?)?.toInt() ?? 0,
       updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
     );
   }

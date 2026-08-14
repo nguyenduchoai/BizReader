@@ -136,6 +136,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Thay đổi tư duy'), findsWidgets);
     expect(find.textContaining('CHƯƠNG'), findsOneWidget);
+
+    final pageViewFinder = find.byKey(const Key('bizreader-demo-page-view'));
+    final pageView = tester.widget<PageView>(pageViewFinder);
+    expect(pageView.scrollDirection, Axis.horizontal);
+    expect(find.byType(SingleChildScrollView), findsNothing);
+
+    await tester.tap(find.byTooltip('Tùy chỉnh đọc'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tùy chỉnh đọc'), findsOneWidget);
+    expect(find.byTooltip('Sáng'), findsOneWidget);
+    expect(find.byTooltip('Giấy'), findsOneWidget);
+    expect(find.byTooltip('Xanh'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('Đóng'));
+    await tester.pumpAndSettle();
+
+    final startPage = pageView.controller!.page;
+    await tester.fling(pageViewFinder, const Offset(-320, 0), 900);
+    await tester.pumpAndSettle();
+    expect(pageView.controller!.page, startPage! + 1);
   });
 
   testWidgets('dashboard fits a compact Android viewport', (tester) async {
@@ -198,7 +218,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('BizReader'), findsWidgets);
-    expect(find.text('0.7.0'), findsWidgets);
+    expect(find.text('0.8.0'), findsWidgets);
     expect(find.text('Hoài Nguyễn'), findsWidgets);
 
     await tester.tap(find.textContaining('giấy phép'));

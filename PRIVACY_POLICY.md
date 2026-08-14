@@ -1,6 +1,6 @@
 # Chính sách quyền riêng tư BizReader
 
-Cập nhật lần cuối: 13/08/2026
+Cập nhật lần cuối: 14/08/2026
 
 BizReader là ứng dụng đọc sách và hỗ trợ kết nối điện thoại Android với máy đọc
 sách BizReader. Ứng dụng có thể đọc tệp trên điện thoại, quản lý nội dung cá
@@ -15,7 +15,7 @@ ghi chú, việc cần làm, lịch, ảnh nền hoặc tiến độ đọc củ
 Ứng dụng lưu cục bộ trên điện thoại:
 
 - tên thiết bị, địa chỉ mạng nội bộ và mã định danh Bluetooth của máy đọc đã chọn;
-- sách đã nhập, tiến độ đọc và vị trí EPUB;
+- sách đã nhập, tiến độ, vị trí EPUB, dấu trang và tùy chọn trình bày khi đọc;
 - ghi chú, việc cần làm, sự kiện lịch, lựa chọn nền nghỉ và ảnh nền;
 - địa điểm cùng kết quả thời tiết gần nhất.
 
@@ -36,6 +36,10 @@ Android hoặc gửi tới BizReader bằng chức năng Mở/Chia sẻ của An
 xử lý trên điện thoại và, khi người dùng chọn truyền, được gửi trực tiếp tới máy
 đọc trong mạng nội bộ. Tệp không được tải lên máy chủ của nhà phát triển hay
 dịch vụ lưu trữ bên thứ ba.
+
+Trình đọc EPUB tắt script nhúng trong sách và chặn tài nguyên mạng, yêu cầu
+quyền WebView cùng điều hướng ra ngoài. Ảnh, phông và biểu định kiểu trong sách
+được đọc từ chính tệp EPUB trên điện thoại.
 
 ## Dữ liệu thời tiết
 

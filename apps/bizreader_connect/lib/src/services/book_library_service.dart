@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:epub_view/epub_view.dart';
+import 'package:epubx/epubx.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/local_book.dart';
+import 'epub_archive_guard.dart';
 
 class BookImportException implements Exception {
   const BookImportException(this.message);
@@ -18,7 +20,12 @@ class BookImportException implements Exception {
 }
 
 class BookLibraryService {
+  BookLibraryService({EpubArchiveGuard? archiveGuard})
+    : _archiveGuard = archiveGuard ?? EpubArchiveGuard();
+
   static const _storageKey = 'bizreader_local_books_v1';
+
+  final EpubArchiveGuard _archiveGuard;
 
   Future<List<LocalBook>> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -44,9 +51,10 @@ class BookLibraryService {
 
   Future<LocalBook> importEpub(File source, String originalFilename) async {
     try {
-      final digest = await sha256.bind(source.openRead()).first;
+      final bytes = await readEpubBytes(source);
+      final digest = sha256.convert(bytes);
       final id = digest.toString();
-      final bookRef = await EpubReader.openBook(source.readAsBytes());
+      final bookRef = await EpubReader.openBook(Future.value(bytes));
       final root = await getApplicationDocumentsDirectory();
       final booksDirectory = Directory('${root.path}/books');
       await booksDirectory.create(recursive: true);
@@ -63,6 +71,8 @@ class BookLibraryService {
         filePath: destination.path,
         remoteFilename: safeFilename,
       );
+    } on EpubArchiveGuardException catch (error) {
+      throw BookImportException(error.message);
     } on FileSystemException {
       throw const BookImportException(
         'Không thể lưu EPUB vào thư viện ứng dụng.',
@@ -72,6 +82,29 @@ class BookLibraryService {
         'Tệp EPUB không hợp lệ hoặc không thể đọc.',
       );
     }
+  }
+
+  Future<Uint8List> readEpubBytes(File source) async {
+    final report = await _archiveGuard.inspect(source);
+    final bytes = BytesBuilder(copy: false);
+    var bytesRead = 0;
+    await for (final chunk in source.openRead(0, report.compressedBytes + 1)) {
+      bytesRead += chunk.length;
+      if (bytesRead > report.compressedBytes) {
+        throw const EpubArchiveGuardException(
+          EpubArchiveViolation.sourceChanged,
+          'Tệp EPUB đã thay đổi trong lúc đang đọc.',
+        );
+      }
+      bytes.add(chunk);
+    }
+    if (bytesRead != report.compressedBytes) {
+      throw const EpubArchiveGuardException(
+        EpubArchiveViolation.sourceChanged,
+        'Tệp EPUB đã thay đổi trong lúc đang đọc.',
+      );
+    }
+    return bytes.takeBytes();
   }
 
   Future<void> save(List<LocalBook> books) async {

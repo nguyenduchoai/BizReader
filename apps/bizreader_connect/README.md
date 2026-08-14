@@ -7,8 +7,11 @@
 - Tìm BizReader bằng BLE và chạm để lưu, không cần mã ghép đôi.
 - Yêu cầu firmware dùng Wi-Fi đã lưu; App không hỏi SSID hoặc mật khẩu.
 - Tự nhận IP/token sau khi người dùng mở **Truyền tệp > Kết nối App** trên máy.
-- Nhập EPUB vào thư viện ứng dụng và đọc trực tiếp trên Android.
-- Lưu vị trí đọc và đồng bộ BLE hai chiều với thiết bị.
+- Nhập EPUB vào thư viện ứng dụng và đọc từng trang bằng thao tác vuốt ngang
+  hoặc chạm mép màn hình.
+- Có mục lục, dấu trang, thanh đọc tự ẩn và bảng chỉnh cỡ chữ, giãn dòng, lề,
+  kiểu chữ, căn chữ cùng 6 nền đọc.
+- Lưu CFI và vị trí chương/trang; đồng bộ tiến độ BLE hai chiều với thiết bị.
 - Mở tệp trực tiếp trong App hoặc từ menu **Mở bằng BizReader** của Android.
 - Đọc ngoại tuyến PDF, DOCX, XLSX/XLS/XLSM/XLSB/CSV/ODS, PPTX,
   Markdown, văn bản/mã nguồn, ảnh, âm thanh và video.
@@ -56,8 +59,9 @@ forecast sang customer endpoint. Dart define được nhúng vào APK, vì vậy
 phẩm quy mô lớn nên đặt khóa sau backend/proxy có kiểm soát hạn mức.
 
 Trình xem đa định dạng được tích hợp từ dự án Gander (MIT) và đóng gói toàn bộ
-bộ dựng tài liệu trong APK; nội dung không được tải lên máy chủ. EPUB vẫn dùng
-trình đọc BizReader để giữ thư viện và đồng bộ tiến độ. Các định dạng Office cũ
+bộ dựng tài liệu trong APK; nội dung không được tải lên máy chủ. EPUB dùng fork
+`flutter_epub_viewer`/`epub.js` cục bộ đã tắt script, quyền WebView, tải mạng và
+điều hướng ngoài để giữ thư viện cùng tiến độ trong BizReader. Các định dạng Office cũ
 `.doc` và `.ppt` chưa được hỗ trợ; hãy lưu lại thành `.docx` hoặc `.pptx`. PDF
 cần Android System WebView phiên bản 125 trở lên.
 
