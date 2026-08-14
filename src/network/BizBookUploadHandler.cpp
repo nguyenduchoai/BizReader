@@ -6,6 +6,7 @@
 #include <cctype>
 
 #include "BizTransferService.h"
+#include "util/BookCacheUtils.h"
 
 namespace {
 constexpr size_t PROGRESS_INTERVAL = 64UL * 1024UL;
@@ -252,6 +253,7 @@ void BizBookUploadHandler::finishUpload() {
     return;
   }
   if (replacingExisting) Storage.remove(backupPath.c_str());
+  if (targetPath.startsWith("/Ebook/")) clearBookCache(targetPath.c_str());
 
   uploadOk = false;
   temporaryPath.clear();

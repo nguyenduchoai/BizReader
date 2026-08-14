@@ -534,14 +534,18 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
               extractSuccess = self->epub->readItemContentsToStream(resolvedPath, cachedImageFile, 4096);
               cachedImageFile.flush();
               cachedImageFile.close();
-              delay(50);  // Give SD card time to sync
             }
 
             if (extractSuccess) {
               // Get image dimensions
               ImageDimensions dims = {0, 0};
               ImageToFramebufferDecoder* decoder = ImageDecoderFactory::getDecoder(cachedImagePath);
-              if (decoder && decoder->getDimensions(cachedImagePath, dims)) {
+              bool dimensionsReady = decoder && decoder->getDimensions(cachedImagePath, dims);
+              if (decoder && !dimensionsReady) {
+                delay(5);
+                dimensionsReady = decoder->getDimensions(cachedImagePath, dims);
+              }
+              if (dimensionsReady) {
                 LOG_DBG("EHP", "Image dimensions: %dx%d", dims.width, dims.height);
 
                 int displayWidth = 0;

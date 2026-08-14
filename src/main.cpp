@@ -307,7 +307,7 @@ void setupDisplayAndFonts(bool seamless = false) {
 void setup() {
   t1 = millis();
 
-#ifdef ENABLE_SERIAL_LOG
+#ifdef ENABLE_SERIAL_TRANSPORT
   // Earliest possible Serial setup. The 250 ms stall before begin() lets the
   // USB Serial/JTAG peripheral finish power-on and lets the host complete USB
   // enumeration before we touch the CDC state — otherwise cold boot races
@@ -490,7 +490,9 @@ void setup() {
 void loop() {
   static unsigned long maxLoopDuration = 0;
   const unsigned long loopStartTime = millis();
+#ifdef ENABLE_SERIAL_TRANSPORT
   static unsigned long lastMemPrint = 0;
+#endif
 
   // mappedInputManager.update() calls gpio.update() and then, on touch boards,
   // computes the tap/long-press/swipe gesture edges MappedInputManager::wasPressed()
@@ -505,6 +507,7 @@ void loop() {
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
+#ifdef ENABLE_SERIAL_TRANSPORT
   if (Serial && millis() - lastMemPrint >= 10000) {
     LOG_INF("MEM", "Free: %d bytes, Total: %d bytes, Min Free: %d bytes, MaxAlloc: %d bytes", ESP.getFreeHeap(),
             ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
@@ -527,6 +530,7 @@ void loop() {
       }
     }
   }
+#endif
 
   // Check for any user activity (button press, release, or touch) or active background work.
   // Touch must be counted explicitly: gestures are synthesized app-side and produce no

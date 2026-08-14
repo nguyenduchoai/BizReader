@@ -3,8 +3,10 @@
 #include <Epub/FootnoteEntry.h>
 #include <Epub/Section.h>
 
+#include <atomic>
 #include <optional>
 
+#include "BizReadingProgressStore.h"
 #include "BookmarkEntry.h"
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
@@ -45,6 +47,13 @@ class EpubReaderActivity final : public Activity {
   // Set when the reader is left at end-of-book and SETTINGS.moveFinishedToReadFolder is on.
   // Consumed in onExit() to relocate the finished book into /Read/.
   bool pendingReadFolderMove = false;
+  std::atomic<bool> pageTurnRenderPending{false};
+  int8_t queuedPageTurn = 0;
+
+  BizReadingProgress pendingBizProgress;
+  bool bizProgressDirty = false;
+  uint64_t bizProgressTimestamp = 0;
+  unsigned long lastBizProgressFlushTime = 0UL;
 
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
@@ -61,6 +70,7 @@ class EpubReaderActivity final : public Activity {
   void renderStatusBar() const;
   void silentIndexNextChapterIfNeeded(uint16_t viewportWidth, uint16_t viewportHeight);
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
+  bool flushBizProgress();
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
   void jumpToPercent(int percent);
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
@@ -70,6 +80,7 @@ class EpubReaderActivity final : public Activity {
   void applyOrientation(uint8_t orientation);
   void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
   void pageTurn(bool isForwardTurn);
+  void requestPageTurn(bool isForwardTurn);
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();

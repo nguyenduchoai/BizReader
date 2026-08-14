@@ -310,9 +310,11 @@ bool MappedInputManager::touchSynthesizedEdge(const Button button) const {
     case Button::PageBack:
       return tsSwipeRight || tsHintPrevious || tsTapPageBack;
     case Button::Up:
-      return tsSwipeUp || tsHintPrevious;
+      // Footer Previous/Next taps keep Nav/Page semantics and map to exactly
+      // one raw axis below (Left/Right), never both axes at once.
+      return tsSwipeUp;
     case Button::Down:
-      return tsSwipeDown || tsHintNext;
+      return tsSwipeDown;
     case Button::Left:
     case Button::Right:
       // While the reader itself is on screen, horizontal swipes are page turns

@@ -49,6 +49,8 @@ void TxtReaderActivity::onEnter() {
 void TxtReaderActivity::onExit() {
   Activity::onExit();
 
+  renderer.releaseGrayscaleScratch();
+
   // Reset orientation back to portrait for the rest of the UI
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
@@ -404,10 +406,18 @@ void TxtReaderActivity::renderPage() {
   renderLines();
   renderStatusBar();
 
-  ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
-
   if (SETTINGS.textAntiAliasing) {
-    ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); });
+    const bool needsBwPrime = renderer.grayscaleNeedsBwPrime();
+    if (needsBwPrime) {
+      ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    }
+    const auto mode =
+        needsBwPrime ? HalDisplay::FAST_REFRESH : ReaderUtils::grayscaleRefreshMode(pagesUntilFullRefresh);
+    if (!ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); }, mode) && !needsBwPrime) {
+      ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    }
+  } else {
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
   }
   // scope destructor clears font cache via FontCacheManager
 }

@@ -3,6 +3,7 @@
 #include <string>
 
 #include "activities/Activity.h"
+#include "util/ProgressRenderThrottle.h"
 
 /**
  * SD-card based firmware update activity.
@@ -44,7 +45,7 @@ class SdFirmwareUpdateActivity : public Activity {
   std::string firmwarePath;
   size_t firmwareSize = 0;
   size_t writtenBytes = 0;
-  unsigned int lastRenderedPercent = 101;
+  ProgressRenderThrottle progressRenderThrottle;
   std::string errorMessage;
 
   void launchPicker();

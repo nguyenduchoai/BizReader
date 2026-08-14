@@ -8,6 +8,7 @@
 #include "OpdsServerStore.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
+#include "util/ProgressRenderThrottle.h"
 
 /**
  * Activity for browsing and downloading books from an OPDS server.
@@ -39,6 +40,7 @@ class OpdsBookBrowserActivity final : public Activity {
   std::string statusMessage;
   size_t downloadProgress = 0;
   size_t downloadTotal = 0;
+  ProgressRenderThrottle progressRenderThrottle;
 
   OpdsServer server;  // Copied at construction — safe even if the store changes during browsing
 
@@ -51,5 +53,5 @@ class OpdsBookBrowserActivity final : public Activity {
   void downloadBook(const OpdsEntry& book);
   void launchSearch();
   void performSearch(const std::string& query);
-  bool preventAutoSleep() override { return true; }
+  bool preventAutoSleep() override { return state == BrowserState::LOADING || state == BrowserState::DOWNLOADING; }
 };

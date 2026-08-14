@@ -2,6 +2,7 @@
 
 #include "activities/Activity.h"
 #include "network/OtaUpdater.h"
+#include "util/ProgressRenderThrottle.h"
 
 class OtaUpdateActivity : public Activity {
   enum State {
@@ -15,14 +16,14 @@ class OtaUpdateActivity : public Activity {
     SHUTTING_DOWN
   };
 
-  // Can't initialize this to 0 or the first render doesn't happen
-  static constexpr unsigned int UNINITIALIZED_PERCENTAGE = 111;
-
   State state = WIFI_SELECTION;
-  unsigned int lastUpdaterPercentage = UNINITIALIZED_PERCENTAGE;
+  ProgressRenderThrottle progressRenderThrottle;
   OtaUpdater updater;
+  size_t updateProcessed = 0;
+  size_t updateTotal = 0;
 
   void onWifiSelectionComplete(bool success);
+  void onUpdateProgress();
 
  public:
   explicit OtaUpdateActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -32,5 +33,5 @@ class OtaUpdateActivity : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override { return state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS; }
-  bool skipLoopDelay() override { return true; }  // Prevent power-saving mode
+  bool skipLoopDelay() override { return state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS; }
 };

@@ -1,5 +1,6 @@
 #include "OtaUpdateActivity.h"
 
+#include <Arduino.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <WiFi.h>
@@ -78,6 +79,23 @@ void OtaUpdateActivity::onExit() {
   }
 }
 
+void OtaUpdateActivity::onUpdateProgress() {
+  const size_t processed = updater.getProcessedSize();
+  const size_t total = updater.getTotalSize();
+  if (!progressRenderThrottle.shouldRender(processed, total, millis())) return;
+
+  {
+    RenderLock lock(*this);
+    updateProcessed = processed;
+    updateTotal = total;
+  }
+  if (total > 0 && processed >= total) {
+    requestUpdateAndWait();
+  } else {
+    requestUpdate(true);
+  }
+}
+
 void OtaUpdateActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
@@ -91,13 +109,11 @@ void OtaUpdateActivity::render(RenderLock&&) {
 
   float updaterProgress = 0;
   if (state == UPDATE_IN_PROGRESS) {
-    LOG_DBG("OTA", "Update progress: %d / %d", updater.getProcessedSize(), updater.getTotalSize());
-    updaterProgress = static_cast<float>(updater.getProcessedSize()) / static_cast<float>(updater.getTotalSize());
-    // Only update every 2% at the most
-    if (static_cast<int>(updaterProgress * 50) == lastUpdaterPercentage / 2) {
-      return;
+    LOG_DBG("OTA", "Update progress: %u / %u", static_cast<unsigned>(updateProcessed),
+            static_cast<unsigned>(updateTotal));
+    if (updateTotal > 0) {
+      updaterProgress = static_cast<float>(updateProcessed) / static_cast<float>(updateTotal);
     }
-    lastUpdaterPercentage = static_cast<int>(updaterProgress * 100);
   }
 
   if (state == CHECKING_FOR_UPDATE) {
@@ -124,9 +140,8 @@ void OtaUpdateActivity::render(RenderLock&&) {
     // Percent label is drawn by BaseTheme::drawProgressBar; this slot is left intentionally empty
     // so the bytes line below stays at the same Y it was at when the activity drew its own percent.
     y += height + metrics.verticalSpacing;
-    renderer.drawCenteredText(
-        UI_10_FONT_ID, y,
-        (std::to_string(updater.getProcessedSize()) + " / " + std::to_string(updater.getTotalSize())).c_str());
+    renderer.drawCenteredText(UI_10_FONT_ID, y,
+                              (std::to_string(updateProcessed) + " / " + std::to_string(updateTotal)).c_str());
   } else if (state == NO_UPDATE) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_NO_UPDATE), true, EpdFontFamily::BOLD);
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
@@ -150,14 +165,17 @@ void OtaUpdateActivity::loop() {
       {
         RenderLock lock(*this);
         state = UPDATE_IN_PROGRESS;
+        updateProcessed = 0;
+        updateTotal = updater.getTotalSize();
       }
+      progressRenderThrottle.reset(millis());
       requestUpdateAndWait();
       const auto res = updater.installUpdate(
           [](void* ctx) {
             // immediate=true notifies the render task directly. The default deferred path only
             // sets a flag consumed at the end of ActivityManager::loop(), which never runs while
             // installUpdate() blocks this task.
-            static_cast<OtaUpdateActivity*>(ctx)->requestUpdate(true);
+            static_cast<OtaUpdateActivity*>(ctx)->onUpdateProgress();
           },
           this);
 

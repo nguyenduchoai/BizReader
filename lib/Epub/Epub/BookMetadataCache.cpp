@@ -375,6 +375,9 @@ void BookMetadataCache::createTocEntry(const std::string& title, const std::stri
 /* ============= READING / LOADING FUNCTIONS ================ */
 
 bool BookMetadataCache::load() {
+  std::lock_guard<std::mutex> lock(readMutex);
+  for (auto& cached : spineReadCache) cached.index = -1;
+  spineReadCacheCursor = 0;
   if (!Storage.openFileForRead("BMC", cachePath + bookBinFile, bookFile)) {
     return false;
   }
@@ -404,6 +407,7 @@ bool BookMetadataCache::load() {
 }
 
 BookMetadataCache::SpineEntry BookMetadataCache::getSpineEntry(const int index) {
+  std::lock_guard<std::mutex> lock(readMutex);
   if (!loaded) {
     LOG_ERR("BMC", "getSpineEntry called but cache not loaded");
     return {};
@@ -414,15 +418,25 @@ BookMetadataCache::SpineEntry BookMetadataCache::getSpineEntry(const int index) 
     return {};
   }
 
+  for (const auto& cached : spineReadCache) {
+    if (cached.index == index) return cached.entry;
+  }
+
   // Seek to spine LUT item, read from LUT and get out data
   bookFile.seek(lutOffset + sizeof(uint32_t) * index);
   uint32_t spineEntryPos;
   serialization::readPod(bookFile, spineEntryPos);
   bookFile.seek(spineEntryPos);
-  return readSpineEntry(bookFile);
+  auto entry = readSpineEntry(bookFile);
+  auto& slot = spineReadCache[spineReadCacheCursor];
+  slot.index = index;
+  slot.entry = entry;
+  spineReadCacheCursor = (spineReadCacheCursor + 1) % SPINE_READ_CACHE_SIZE;
+  return entry;
 }
 
 BookMetadataCache::TocEntry BookMetadataCache::getTocEntry(const int index) {
+  std::lock_guard<std::mutex> lock(readMutex);
   if (!loaded) {
     LOG_ERR("BMC", "getTocEntry called but cache not loaded");
     return {};

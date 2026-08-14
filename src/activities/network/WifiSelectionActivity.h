@@ -70,6 +70,9 @@ class WifiSelectionActivity final : public Activity {
 
   // Whether to attempt auto-connect on entry
   const bool allowAutoConnect;
+  // Standalone settings owns only this picker and powers Wi-Fi down on exit;
+  // transfer/sync parents keep it for the operation that follows.
+  const bool keepWifiOnExit;
 
   // Whether we are attempting to auto-connect
   bool autoConnecting = false;
@@ -100,8 +103,9 @@ class WifiSelectionActivity final : public Activity {
   void onComplete(bool connected);
 
  public:
-  explicit WifiSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool autoConnect = true)
-      : Activity("WifiSelection", renderer, mappedInput), allowAutoConnect(autoConnect) {}
+  explicit WifiSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool autoConnect = true,
+                                 bool keepWifi = true)
+      : Activity("WifiSelection", renderer, mappedInput), allowAutoConnect(autoConnect), keepWifiOnExit(keepWifi) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;

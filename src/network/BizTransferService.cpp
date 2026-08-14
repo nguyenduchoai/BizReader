@@ -258,7 +258,7 @@ class BizTransferService::Impl {
     bleServer = NimBLEDevice::createServer();
     if (!bleServer) {
       LOG_ERR("BIZ", "Cannot create BLE server");
-      NimBLEDevice::deinit();
+      NimBLEDevice::deinit(true);
       return;
     }
     bleServer->setCallbacks(&serverCallbacks);
@@ -266,7 +266,7 @@ class BizTransferService::Impl {
     NimBLEService* service = bleServer->createService(BizTransferService::SERVICE_UUID);
     if (!service) {
       LOG_ERR("BIZ", "Cannot create BLE service");
-      NimBLEDevice::deinit();
+      NimBLEDevice::deinit(true);
       bleServer = nullptr;
       return;
     }
@@ -285,7 +285,7 @@ class BizTransferService::Impl {
     if (!commandCharacteristic || !statusCharacteristic || !infoCharacteristic || !syncRxCharacteristic ||
         !syncTxCharacteristic) {
       LOG_ERR("BIZ", "Cannot create BLE characteristics");
-      NimBLEDevice::deinit();
+      NimBLEDevice::deinit(true);
       bleServer = nullptr;
       commandCharacteristic = nullptr;
       statusCharacteristic = nullptr;
@@ -313,7 +313,9 @@ class BizTransferService::Impl {
     bleStopping.store(true);
     stopTransfer();
     if (bleStarted) {
-      NimBLEDevice::deinit();
+      // begin() constructs a fresh GATT graph, so clearAll=false would retain
+      // duplicate services and heap on every App Connect open/Back cycle.
+      NimBLEDevice::deinit(true);
       bleStarted = false;
       bleServer = nullptr;
       commandCharacteristic = nullptr;

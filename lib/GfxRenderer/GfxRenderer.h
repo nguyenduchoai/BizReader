@@ -73,6 +73,12 @@ class GfxRenderer {
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
+  // Reused by grayscale readers. On PSRAM boards this avoids allocating and
+  // freeing a full panel plane on every page turn; smaller boards keep using a
+  // short strip fallback.
+  uint8_t* grayscaleScratch_ = nullptr;
+  size_t grayscaleScratchSize_ = 0;
+  bool grayscaleScratchExternal_ = false;
 
   void renderChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, int* y, bool pixelState,
                   EpdFontFamily::Style style) const;
@@ -91,7 +97,7 @@ class GfxRenderer {
  public:
   explicit GfxRenderer(HalDisplay& halDisplay)
       : display(halDisplay), renderMode(BW), orientation(Portrait), fadingFix(false) {}
-  ~GfxRenderer() { freeBwBufferChunks(); }
+  ~GfxRenderer();
 
   static constexpr int VIEWABLE_MARGIN_TOP = 9;
   static constexpr int VIEWABLE_MARGIN_RIGHT = 3;
@@ -149,6 +155,8 @@ class GfxRenderer {
   // grayscale planes band-by-band without a full second buffer.
   void beginStripTarget(uint8_t* scratch, int stripY0, int stripRows) const;
   void endStripTarget() const;
+  uint8_t* acquireGrayscaleScratch(size_t bytes, bool externalOnly = false);
+  void releaseGrayscaleScratch();
 
   // Band culling for tiled grayscale. Takes a glyph bounding box in logical
   // screen coords and returns false only when a strip is active AND the box's
@@ -249,8 +257,10 @@ class GfxRenderer {
   // False on controller-less panels whose grayscale pass self-clears; the reader
   // uses this to skip the redundant pre-grayscale BW panel refresh.
   bool grayscaleNeedsBwPrime() const;
-  bool storeBwBuffer();    // Returns true if buffer was stored successfully
-  void restoreBwBuffer();  // Restore and free the stored buffer
+  bool storeBwBuffer();  // Returns true if buffer was stored successfully
+  // Restore and free the stored buffer. Set cleanupGrayscale=false when the
+  // restored B/W frame is still needed as the base for displayGrayBuffer().
+  void restoreBwBuffer(bool cleanupGrayscale = true);
   void cleanupGrayscaleWithFrameBuffer() const;
 
   // Font helpers

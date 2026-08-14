@@ -1,5 +1,6 @@
 #include "OpdsBookBrowserActivity.h"
 
+#include <Arduino.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -261,10 +262,14 @@ void OpdsBookBrowserActivity::navigateBack() {
 }
 
 void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
-  state = BrowserState::DOWNLOADING;
-  statusMessage = book.title;
-  downloadProgress = downloadTotal = 0;
-  requestUpdate(true);
+  {
+    RenderLock lock(*this);
+    state = BrowserState::DOWNLOADING;
+    statusMessage = book.title;
+    downloadProgress = downloadTotal = 0;
+  }
+  progressRenderThrottle.reset(millis());
+  requestUpdateAndWait();
 
   // Build full download URL relative to the current feed, not the root server URL
   const std::string feedUrl = UrlUtils::buildUrl(server.url, currentPath);
@@ -276,20 +281,32 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
   const auto result = HttpDownloader::downloadToFile(
       downloadUrl, filename,
       [this](const size_t downloaded, const size_t total) {
-        downloadProgress = downloaded;
-        downloadTotal = total;
-        requestUpdate(true);
+        if (progressRenderThrottle.shouldRender(downloaded, total, millis())) {
+          {
+            RenderLock lock(*this);
+            downloadProgress = downloaded;
+            downloadTotal = total;
+          }
+          if (downloaded >= total) {
+            requestUpdateAndWait();
+          } else {
+            requestUpdate(true);
+          }
+        }
       },
       nullptr, server.username, server.password);
 
-  if (result == HttpDownloader::OK) {
-    clearBookCache(filename);
-    state = BrowserState::BROWSING;
-  } else {
-    state = BrowserState::ERROR;
-    errorMessage = tr(STR_DOWNLOAD_FAILED);
+  if (result == HttpDownloader::OK) clearBookCache(filename);
+  {
+    RenderLock lock(*this);
+    if (result == HttpDownloader::OK) {
+      state = BrowserState::BROWSING;
+    } else {
+      state = BrowserState::ERROR;
+      errorMessage = tr(STR_DOWNLOAD_FAILED);
+    }
   }
-  requestUpdate();
+  requestUpdateAndWait();
 }
 
 void OpdsBookBrowserActivity::launchSearch() {

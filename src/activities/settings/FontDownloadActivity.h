@@ -7,6 +7,7 @@
 #include "SdCardFont.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
+#include "util/ProgressRenderThrottle.h"
 
 // JSON schema version of the fonts.json manifest. The canonical version for
 // the build tooling lives in lib/EpdFont/scripts/cpfont_version.py. This
@@ -34,14 +35,8 @@ class FontDownloadActivity : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool preventAutoSleep() override {
-    return state_ == LOADING_MANIFEST || state_ == DOWNLOADING ||
-           // The download is synchronous and blocks the main loop until it
-           // completes, so activityManager.preventAutoSleep() is never polled
-           // during downloading.
-           state_ == COMPLETE || state_ == ERROR;
-  }
-  bool skipLoopDelay() override { return true; }
+  bool preventAutoSleep() override { return state_ == LOADING_MANIFEST || state_ == DOWNLOADING; }
+  bool skipLoopDelay() override { return state_ == LOADING_MANIFEST || state_ == DOWNLOADING; }
 
  private:
   enum State {
@@ -83,6 +78,7 @@ class FontDownloadActivity : public Activity {
   size_t currentFileTotal_ = 0;
   size_t fileProgress_ = 0;
   size_t fileTotal_ = 0;
+  ProgressRenderThrottle progressRenderThrottle_;
   int downloadingFamilyIndex_ = 0;
   std::string errorMessage_;
   bool cancelRequested_ = false;

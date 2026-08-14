@@ -128,7 +128,7 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   // is an external chip; if it does NOT print, the sleep path hung above and
   // the CPU is spinning awake (which reads like ~20 mA on the meter).
   LOG_INF("PWR", "Sleep quiesce done (touch, I2C); entering deep sleep");
-#ifdef ENABLE_SERIAL_LOG
+#ifdef ENABLE_SERIAL_TRANSPORT
   // Push the touch/quiesce breadcrumbs out before the CDC teardown below:
   // esp_deep_sleep_start() follows immediately, so anything still sitting in the
   // USB-CDC TX buffer (the GT911 sleep status line in particular) is lost. The
@@ -138,7 +138,7 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
 #endif
 #endif
 
-#ifdef ENABLE_SERIAL_LOG
+#ifdef ENABLE_SERIAL_TRANSPORT
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.
   // logSerial is the raw HWCDC reference; Serial is the MySerialImpl proxy

@@ -121,11 +121,11 @@ void SettingsActivity::loop() {
   if (mappedInput.getTouchTap(touchX, touchY)) {
     const auto& metrics = UITheme::getInstance().getMetrics();
     const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
-    const int contentHeight = renderer.getScreenHeight() -
-                              (metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight +
-                               metrics.buttonHintsHeight + metrics.verticalSpacing * 2);
+    const int contentHeight =
+        renderer.getScreenHeight() - (metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight +
+                                      metrics.buttonHintsHeight + metrics.verticalSpacing * 2);
     const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
-                                                    settingsCount, selectedSettingIndex - 1, false);
+                                                   settingsCount, selectedSettingIndex - 1, false);
     if (touched >= 0) {
       selectedSettingIndex = touched + 1;
     } else {
@@ -292,7 +292,8 @@ void SettingsActivity::toggleCurrentSetting() {
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::Network:
-        startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, false), resultHandler);
+        startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, false, false),
+                               resultHandler);
         break;
       case SettingAction::ClearCache:
         startActivityForResult(std::make_unique<ClearCacheActivity>(renderer, mappedInput), resultHandler);

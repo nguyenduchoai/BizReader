@@ -16,6 +16,7 @@
 
 #include <string>
 
+#include "Memory.h"
 #include "SemVersion.h"
 
 namespace {
@@ -124,6 +125,12 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
       .http_client_init_cb = http_client_set_header_cb,
   };
 
+  wifi_ps_type_t previousPowerSave = WIFI_PS_MIN_MODEM;
+  const bool restorePowerSave = esp_wifi_get_ps(&previousPowerSave) == ESP_OK;
+  const ScopedCleanup powerSaveGuard{[restorePowerSave, previousPowerSave]() {
+    if (restorePowerSave) esp_wifi_set_ps(previousPowerSave);
+  }};
+
   /* For better timing and connectivity, we disable power saving for WiFi */
   esp_wifi_set_ps(WIFI_PS_NONE);
 
@@ -150,9 +157,6 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
     }
     delay(100);  // TODO: should we replace this with something better?
   } while (esp_err == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
-
-  /* Return back to default power saving for WiFi in case of failing */
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   if (esp_err != ESP_OK) {
     LOG_ERR("OTA", "esp_https_ota_perform Failed: %s", esp_err_to_name(esp_err));

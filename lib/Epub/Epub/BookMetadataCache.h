@@ -3,7 +3,9 @@
 #include <HalStorage.h>
 
 #include <algorithm>
+#include <array>
 #include <deque>
+#include <mutex>
 #include <string>
 
 class BookMetadataCache {
@@ -54,6 +56,15 @@ class BookMetadataCache {
   // Temp file handles during build
   HalFile spineFile;
   HalFile tocFile;
+
+  static constexpr size_t SPINE_READ_CACHE_SIZE = 4;
+  struct CachedSpineEntry {
+    int index = -1;
+    SpineEntry entry;
+  };
+  std::array<CachedSpineEntry, SPINE_READ_CACHE_SIZE> spineReadCache{};
+  size_t spineReadCacheCursor = 0;
+  mutable std::mutex readMutex;
 
   // Index for fast href→spineIndex lookup (used only for large EPUBs)
   struct SpineHrefIndexEntry {

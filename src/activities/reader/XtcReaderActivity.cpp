@@ -48,6 +48,8 @@ void XtcReaderActivity::onEnter() {
 void XtcReaderActivity::onExit() {
   Activity::onExit();
 
+  renderer.releaseGrayscaleScratch();
+
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
   xtc.reset();
@@ -219,8 +221,9 @@ void XtcReaderActivity::renderPage() {
     pageBufferSize = ((pageWidth + 7) / 8) * pageHeight;
   }
 
-  // Allocate page buffer
-  uint8_t* pageBuffer = static_cast<uint8_t*>(malloc(pageBufferSize));
+  // Reuse one reader scratch buffer. LilyGo places large page buffers in PSRAM,
+  // avoiding a large malloc/free pair and internal-heap fragmentation per turn.
+  uint8_t* pageBuffer = renderer.acquireGrayscaleScratch(pageBufferSize);
   if (!pageBuffer) {
     LOG_ERR("XTR", "Failed to allocate page buffer (%lu bytes)", pageBufferSize);
     renderer.clearScreen();
@@ -234,7 +237,6 @@ void XtcReaderActivity::renderPage() {
   if (bytesRead == 0) {
     LOG_ERR("XTR", "Failed to load page %lu: bufferSize=%lu bitDepth=%u error=%s", currentPage, pageBufferSize,
             bitDepth, xtc::errorToString(xtc->getLastError()));
-    free(pageBuffer);
     renderer.clearScreen();
     renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_PAGE_LOAD_ERROR), true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
@@ -272,10 +274,12 @@ void XtcReaderActivity::renderPage() {
       return (bit1 << 1) | bit2;
     };
 
-    // Optimized grayscale rendering without storeBwBuffer (saves 48KB peak memory)
-    // Flow: BW display → LSB/MSB passes → grayscale display → re-render BW for next frame
+    // Optimized grayscale rendering without storeBwBuffer (saves 48KB peak memory).
+    // Controller-less panels composite from the live B/W framebuffer, so restore
+    // that base before displayGrayBuffer() and skip their redundant B/W prime.
 
     // Count pixel distribution for debugging
+#if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
     uint32_t pixelCounts[4] = {0, 0, 0, 0};
     for (uint16_t y = 0; y < pageHeight; y++) {
       for (uint16_t x = 0; x < pageWidth; x++) {
@@ -284,6 +288,7 @@ void XtcReaderActivity::renderPage() {
     }
     LOG_DBG("XTR", "Pixel distribution: White=%lu, DarkGrey=%lu, LightGrey=%lu, Black=%lu", pixelCounts[0],
             pixelCounts[1], pixelCounts[2], pixelCounts[3]);
+#endif
 
     // Pass 1: BW buffer - draw all non-white pixels as black
     for (uint16_t y = 0; y < pageHeight; y++) {
@@ -294,14 +299,15 @@ void XtcReaderActivity::renderPage() {
       }
     }
 
-    if (pagesUntilFullRefresh <= 1) {
+    const bool needsBwPrime = renderer.grayscaleNeedsBwPrime();
+    if (needsBwPrime && pagesUntilFullRefresh <= 1) {
       // Periodic ghost cleanup: scrub via the normal path, then run the
       // settle flavor of the grayscale base pass (DTM planes are equal after
       // the display sync, so only the gentle reinforcement cells fire).
       renderer.displayBuffer(HalDisplay::HALF_REFRESH);
       renderer.preconditionGrayscale();
       pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
-    } else {
+    } else if (needsBwPrime) {
       // OEM grayscale pipeline base: differential "AA-pre-BW(mid)" update as
       // the page turn on X3; plain FAST refresh on X4 (previous behavior).
       renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
@@ -333,10 +339,8 @@ void XtcReaderActivity::renderPage() {
     }
     renderer.copyGrayscaleMsbBuffers();
 
-    // Display grayscale overlay
-    renderer.displayGrayBuffer();
-
-    // Pass 4: Re-render BW to framebuffer (restore for next frame, instead of restoreBwBuffer)
+    // Restore the B/W base before composing the gray planes. EPD47 consumes this
+    // framebuffer directly; previously it received the MSB plane as its base.
     renderer.clearScreen();
     for (uint16_t y = 0; y < pageHeight; y++) {
       for (uint16_t x = 0; x < pageWidth; x++) {
@@ -346,10 +350,11 @@ void XtcReaderActivity::renderPage() {
       }
     }
 
-    // Cleanup grayscale buffers with current frame buffer
-    renderer.cleanupGrayscaleWithFrameBuffer();
+    const auto grayMode =
+        needsBwPrime ? HalDisplay::FAST_REFRESH : ReaderUtils::grayscaleRefreshMode(pagesUntilFullRefresh);
+    renderer.displayGrayBuffer(grayMode);
 
-    free(pageBuffer);
+    renderer.cleanupGrayscaleWithFrameBuffer();
 
     LOG_DBG("XTR", "Rendered page %lu/%lu (2-bit grayscale)", currentPage + 1, xtc->getPageCount());
     return;
@@ -373,8 +378,6 @@ void XtcReaderActivity::renderPage() {
     }
   }
   // White pixels are already cleared by clearScreen()
-
-  free(pageBuffer);
 
   if (SETTINGS.xtcStatusBarMode == CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_TOP) {
     renderStatusBarOverlay(StatusBarOverlayPosition::Top);

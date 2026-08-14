@@ -127,14 +127,15 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
   }
 
   serialization::readPod(file, pageCount);
-  // Explicit close() required: member variable persists beyond function scope
-  file.close();
+  // Keep the validated section open while this chapter is active. Page turns
+  // then only seek/read instead of reopening the same SD file every time.
   LOG_DBG("SCT", "Deserialization succeeded: %d pages", pageCount);
   return true;
 }
 
 // Your updated class method (assuming you are using the 'SD' object, which is a wrapper for a specific filesystem)
-bool Section::clearCache() const {
+bool Section::clearCache() {
+  if (file) file.close();
   if (!Storage.exists(filePath.c_str())) {
     LOG_DBG("SCT", "Cache does not exist, no action needed");
     return true;
@@ -154,6 +155,7 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
                                 const uint16_t viewportHeight, const bool hyphenationEnabled, const bool embeddedStyle,
                                 const uint8_t imageRendering, const bool focusReadingEnabled,
                                 const std::function<void()>& popupFn) {
+  if (file) file.close();
   const auto localPath = epub->getSpineItem(spineIndex).href;
   const auto tmpHtmlPath = epub->getCachePath() + "/.tmp_" + std::to_string(spineIndex) + ".html";
 
@@ -312,7 +314,7 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
 }
 
 std::unique_ptr<Page> Section::loadPageFromSectionFile() {
-  if (!Storage.openFileForRead("SCT", filePath, file)) {
+  if (!file && !Storage.openFileForRead("SCT", filePath, file)) {
     return nullptr;
   }
 
@@ -324,10 +326,7 @@ std::unique_ptr<Page> Section::loadPageFromSectionFile() {
   serialization::readPod(file, pagePos);
   file.seek(pagePos);
 
-  auto page = Page::deserialize(file);
-  // Explicit close() required: member variable persists beyond function scope
-  file.close();
-  return page;
+  return Page::deserialize(file);
 }
 
 std::string Section::getTextFromSectionFile() {

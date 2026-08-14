@@ -59,9 +59,11 @@ void logPrintf(const char* level, const char* origin, const char* format, ...) {
     }
   }
   va_end(args);
+#ifdef ENABLE_SERIAL_TRANSPORT
   if (logSerial) {
     logSerial.print(buf);
   }
+#endif
   addToLogRingBuffer(buf);
 }
 

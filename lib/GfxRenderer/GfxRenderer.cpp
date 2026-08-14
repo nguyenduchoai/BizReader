@@ -9,6 +9,10 @@
 
 #include <algorithm>
 
+#if defined(BOARD_HAS_PSRAM)
+#include <esp_heap_caps.h>
+#endif
+
 #include "FontCacheManager.h"
 
 namespace {
@@ -21,6 +25,11 @@ uint8_t resolveSdCardStyle(const SdCardFont& font, const EpdFontFamily::Style st
   return font.resolveStyle(static_cast<uint8_t>(style));
 }
 }  // namespace
+
+GfxRenderer::~GfxRenderer() {
+  freeBwBufferChunks();
+  releaseGrayscaleScratch();
+}
 
 namespace {
 const char* resolveVisualText(const char* text, std::string& visualBuffer, BidiUtils::BidiBaseDir baseDir);
@@ -1342,6 +1351,40 @@ void GfxRenderer::endStripTarget() const {
   _stripRows = 0;
 }
 
+uint8_t* GfxRenderer::acquireGrayscaleScratch(const size_t bytes, const bool externalOnly) {
+  if (grayscaleScratch_ && grayscaleScratchSize_ >= bytes && (!externalOnly || grayscaleScratchExternal_)) {
+    return grayscaleScratch_;
+  }
+
+  free(grayscaleScratch_);
+  grayscaleScratch_ = nullptr;
+  grayscaleScratchSize_ = 0;
+  grayscaleScratchExternal_ = false;
+
+#if defined(BOARD_HAS_PSRAM)
+  grayscaleScratch_ = static_cast<uint8_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  grayscaleScratchExternal_ = grayscaleScratch_ != nullptr;
+#else
+  (void)externalOnly;
+#endif
+  if (!grayscaleScratch_ && !externalOnly) {
+    grayscaleScratch_ = static_cast<uint8_t*>(malloc(bytes));
+  }
+  if (!grayscaleScratch_) {
+    return nullptr;
+  }
+
+  grayscaleScratchSize_ = bytes;
+  return grayscaleScratch_;
+}
+
+void GfxRenderer::releaseGrayscaleScratch() {
+  free(grayscaleScratch_);
+  grayscaleScratch_ = nullptr;
+  grayscaleScratchSize_ = 0;
+  grayscaleScratchExternal_ = false;
+}
+
 bool GfxRenderer::glyphIntersectsStrip(int x0, int y0, int x1, int y1) const {
   if (!_stripActive) {
     return true;
@@ -1861,7 +1904,7 @@ bool GfxRenderer::storeBwBuffer() {
  * It should be called to restore the BW buffer state after grayscale rendering is complete.
  * Uses chunked restoration to match chunked storage.
  */
-void GfxRenderer::restoreBwBuffer() {
+void GfxRenderer::restoreBwBuffer(const bool cleanupGrayscale) {
   // Check if all chunks are allocated
   bool missingChunks = false;
   for (const auto& bwBufferChunk : bwBufferChunks) {
@@ -1882,7 +1925,9 @@ void GfxRenderer::restoreBwBuffer() {
     memcpy(frameBuffer + offset, bwBufferChunks[i], chunkSize);
   }
 
-  display.cleanupGrayscaleBuffers(frameBuffer);
+  if (cleanupGrayscale) {
+    display.cleanupGrayscaleBuffers(frameBuffer);
+  }
 
   freeBwBufferChunks();
   LOG_DBG("GFX", "Restored and freed BW buffer chunks");

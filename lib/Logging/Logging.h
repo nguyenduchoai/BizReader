@@ -8,6 +8,9 @@
 Define ENABLE_SERIAL_LOG to enable logging
 Can be set in platformio.ini build_flags or as a compile definition
 
+Define ENABLE_SERIAL_TRANSPORT to mirror logs and accept commands over USB CDC.
+Without it, LOG_* still records the RTC crash ring without touching USB Serial.
+
 Define LOG_LEVEL to control log verbosity:
 0 = ERR only
 1 = ERR + INF

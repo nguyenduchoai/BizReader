@@ -142,8 +142,8 @@ void SdFirmwareUpdateActivity::onConfirmationResult(const ActivityResult& result
     RenderLock lock(*this);
     state = State::UPDATING;
     writtenBytes = 0;
-    lastRenderedPercent = 101;
   }
+  progressRenderThrottle.reset(millis());
   requestUpdateAndWait();
   performUpdate();
 }
@@ -153,11 +153,20 @@ void SdFirmwareUpdateActivity::performUpdate() {
 
   auto progressCb = +[](size_t written, size_t total, void* ctx) {
     auto* self = static_cast<SdFirmwareUpdateActivity*>(ctx);
-    self->writtenBytes = written;
-    self->firmwareSize = total;
-    // immediate=true: wake the render task directly. We're in a tight sync
-    // loop so the main loop won't drain the requestedUpdate flag for us.
-    self->requestUpdate(true);
+    if (self->progressRenderThrottle.shouldRender(written, total, millis())) {
+      {
+        RenderLock lock(*self);
+        self->writtenBytes = written;
+        self->firmwareSize = total;
+      }
+      // We're in a tight synchronous flash loop, so the main loop cannot drain
+      // deferred updates. Wait for 100% so it cannot be replaced by SUCCESS.
+      if (written >= total) {
+        self->requestUpdateAndWait();
+      } else {
+        self->requestUpdate(true);
+      }
+    }
   };
 
   // Re-validate at flash time (TOCTOU): SD is removable, so don't trust the
@@ -215,13 +224,7 @@ void SdFirmwareUpdateActivity::render(RenderLock&&) {
   if (state == State::VALIDATING) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_VALIDATING_FIRMWARE));
   } else if (state == State::UPDATING) {
-    // Throttle redraws to once per percent.
     const unsigned int pct = firmwareSize > 0 ? static_cast<unsigned int>((writtenBytes * 100) / firmwareSize) : 0;
-    if (pct == lastRenderedPercent) {
-      return;
-    }
-    lastRenderedPercent = pct;
-
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATING), true, EpdFontFamily::BOLD);
 
     int y = top + lineHeight + metrics.verticalSpacing;

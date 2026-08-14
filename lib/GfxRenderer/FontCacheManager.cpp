@@ -99,9 +99,14 @@ void FontCacheManager::PrewarmScope::endScanAndPrewarm() {
 
   manager_->prewarmCache(manager_->scanFontId_, manager_->scanText_.c_str(), styleMask);
 
-  // Free scan string memory
+  // Keep the normal page-sized allocation for the next turn. Releasing it on
+  // every page fragments the internal heap; only shed pathological capacity.
   manager_->scanText_.clear();
-  manager_->scanText_.shrink_to_fit();
+  if (manager_->scanText_.capacity() > 64 * 1024) {
+    std::string fresh;
+    fresh.reserve(2048);
+    manager_->scanText_.swap(fresh);
+  }
 }
 
 FontCacheManager::PrewarmScope::~PrewarmScope() {

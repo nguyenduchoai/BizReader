@@ -1,5 +1,6 @@
 #include "FontDownloadActivity.h"
 
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -290,6 +291,7 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
       fileProgress_ = 0;
       fileTotal_ = file.size;
     }
+    progressRenderThrottle_.reset(millis());
     requestUpdateAndWait();
 
     char destPath[128];
@@ -300,14 +302,23 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
     auto result = HttpDownloader::downloadToFile(
         url, destPath,
         [this](size_t downloaded, size_t total) {
-          fileProgress_ = downloaded;
-          fileTotal_ = total;
           mappedInput.update();
           if (mappedInput.isPressed(MappedInputManager::Button::Back) ||
               mappedInput.wasPressed(MappedInputManager::Button::Back)) {
             cancelRequested_ = true;
           }
-          requestUpdate(true);
+          if (progressRenderThrottle_.shouldRender(downloaded, total, millis())) {
+            {
+              RenderLock lock(*this);
+              fileProgress_ = downloaded;
+              fileTotal_ = total;
+            }
+            if (downloaded >= total) {
+              requestUpdateAndWait();
+            } else {
+              requestUpdate(true);
+            }
+          }
         },
         &cancelRequested_);
 
@@ -437,10 +448,10 @@ void FontDownloadActivity::loop() {
       if (mappedInput.getTouchTap(touchX, touchY)) {
         const auto& metrics = UITheme::getInstance().getMetrics();
         const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-        const int contentHeight = renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight -
-                                  metrics.verticalSpacing;
-        const int touched = mappedInput.touchListIndex(
-            Rect{0, contentTop, renderer.getScreenWidth(), contentHeight}, listSize, selectedIndex_, true);
+        const int contentHeight =
+            renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
+        const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
+                                                       listSize, selectedIndex_, true);
         if (touched >= 0) {
           selectedIndex_ = touched;
         } else {

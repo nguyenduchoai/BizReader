@@ -5,6 +5,8 @@
 #include <HalTiltSensor.h>
 #include <Logging.h>
 
+#include <algorithm>
+
 #include "MappedInputManager.h"
 
 namespace ReaderUtils {
@@ -90,10 +92,50 @@ inline HalDisplay::RefreshMode grayscaleRefreshMode(int& pagesUntilFullRefresh) 
 // and other overlays should be drawn before calling this.
 // Kept as a template to avoid std::function overhead; instantiated once per reader type.
 template <typename RenderFn>
-void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn) {
+bool renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn,
+                       const HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) {
+  if (renderer.supportsStripGrayscale()) {
+    const int height = renderer.getDisplayHeight();
+    const int widthBytes = renderer.getDisplayWidthBytes();
+    int rows = 80;
+    uint8_t* scratch = nullptr;
+#if defined(BOARD_HAS_PSRAM)
+    scratch = renderer.acquireGrayscaleScratch(static_cast<size_t>(widthBytes) * height, true);
+    if (scratch) rows = height;
+    if (!scratch) {
+      scratch = renderer.acquireGrayscaleScratch(static_cast<size_t>(widthBytes) * rows);
+    }
+#else
+    scratch = renderer.acquireGrayscaleScratch(static_cast<size_t>(widthBytes) * rows);
+#endif
+    if (!scratch) {
+      LOG_ERR("READER", "Failed to allocate grayscale scratch");
+      return false;
+    }
+
+    const auto renderPlane = [&](const bool lsb) {
+      renderer.setRenderMode(lsb ? GfxRenderer::GRAYSCALE_LSB : GfxRenderer::GRAYSCALE_MSB);
+      for (int y = 0; y < height; y += rows) {
+        const int bandRows = std::min(rows, height - y);
+        renderer.beginStripTarget(scratch, y, bandRows);
+        renderer.clearScreen(0x00);
+        renderFn();
+        renderer.endStripTarget();
+        renderer.writeGrayscalePlaneStrip(lsb, scratch, y, bandRows);
+      }
+    };
+
+    renderPlane(true);
+    renderPlane(false);
+    renderer.setRenderMode(GfxRenderer::BW);
+    renderer.displayGrayBuffer(refreshMode);
+    renderer.cleanupGrayscaleWithFrameBuffer();
+    return true;
+  }
+
   if (!renderer.storeBwBuffer()) {
     LOG_ERR("READER", "Failed to store BW buffer for anti-aliasing");
-    return;
+    return false;
   }
 
   renderer.clearScreen(0x00);
@@ -106,10 +148,11 @@ void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn) {
   renderFn();
   renderer.copyGrayscaleMsbBuffers();
 
-  renderer.displayGrayBuffer();
   renderer.setRenderMode(GfxRenderer::BW);
-
-  renderer.restoreBwBuffer();
+  renderer.restoreBwBuffer(false);
+  renderer.displayGrayBuffer(refreshMode);
+  renderer.cleanupGrayscaleWithFrameBuffer();
+  return true;
 }
 
 }  // namespace ReaderUtils
