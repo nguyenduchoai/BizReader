@@ -117,9 +117,7 @@ bool JsonSettingsIO::loadState(CrossPointState& s, const char* json) {
 
 // ---- CrossPointSettings ----
 
-bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path) {
-  JsonDocument doc;
-
+void JsonSettingsIO::settingsToJson(const CrossPointSettings& s, JsonDocument& doc) {
   for (const auto& info : getSettingsList()) {
     if (!info.key) continue;
     // Dynamic entries (KOReader etc.) are stored in their own files — skip.
@@ -152,30 +150,25 @@ bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path)
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
   doc["language"] = (s.language < getLanguageCount()) ? LANGUAGE_CODES[s.language] : "EN";
+}
 
-  // Language -- managed by LanguageSelectActivity, not in SettingsList.
-  // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
-  doc["language"] = (s.language < getLanguageCount()) ? LANGUAGE_CODES[s.language] : "EN";
+bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path) {
+  JsonDocument doc;
+  settingsToJson(s, doc);
 
   String json;
   serializeJson(doc, json);
   return Storage.writeFile(path, json);
 }
 
-bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool* needsResave) {
-  if (needsResave) *needsResave = false;
-  JsonDocument doc;
-  auto error = deserializeJson(doc, json);
-  if (error) {
-    LOG_ERR("CPS", "JSON parse error: %s", error.c_str());
-    return false;
-  }
-
+void JsonSettingsIO::settingsFromJson(CrossPointSettings& s, JsonObjectConst doc, bool* needsResave,
+                                      bool migrateLegacy) {
   auto clamp = [](uint8_t val, uint8_t maxVal, uint8_t def) -> uint8_t { return val < maxVal ? val : def; };
 
   // Legacy migration: if statusBarChapterPageCount is absent this is a pre-refactor settings file.
   // Populate s with migrated values now so the generic loop below picks them up as defaults and clamps them.
-  if (doc["statusBarChapterPageCount"].isNull()) {
+  // File loads only: a partial BLE settings object must not reset the status bar.
+  if (migrateLegacy && doc["statusBarChapterPageCount"].isNull()) {
     applyLegacyStatusBarSettings(s);
   }
 
@@ -224,7 +217,7 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
     }
   }
 
-  if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
+  if (migrateLegacy && doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
     const uint8_t legacyValue =
         clamp(doc["sleepTimeout"] | (uint8_t)CrossPointSettings::SLEEP_10_MIN, CrossPointSettings::SLEEP_TIMEOUT_COUNT,
               (uint8_t)CrossPointSettings::SLEEP_10_MIN);
@@ -232,24 +225,28 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
     if (needsResave) *needsResave = true;
   }
   // Front button remap — managed by RemapFrontButtons sub-activity, not in SettingsList.
+  // Absent keys keep the current mapping (struct defaults on a fresh file load).
   using S = CrossPointSettings;
   s.frontButtonBack =
-      clamp(doc["frontButtonBack"] | (uint8_t)S::FRONT_HW_BACK, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_BACK);
-  s.frontButtonConfirm = clamp(doc["frontButtonConfirm"] | (uint8_t)S::FRONT_HW_CONFIRM, S::FRONT_BUTTON_HARDWARE_COUNT,
-                               S::FRONT_HW_CONFIRM);
+      clamp(doc["frontButtonBack"] | s.frontButtonBack, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_BACK);
+  s.frontButtonConfirm =
+      clamp(doc["frontButtonConfirm"] | s.frontButtonConfirm, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_CONFIRM);
   s.frontButtonLeft =
-      clamp(doc["frontButtonLeft"] | (uint8_t)S::FRONT_HW_LEFT, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_LEFT);
+      clamp(doc["frontButtonLeft"] | s.frontButtonLeft, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_LEFT);
   s.frontButtonRight =
-      clamp(doc["frontButtonRight"] | (uint8_t)S::FRONT_HW_RIGHT, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_RIGHT);
+      clamp(doc["frontButtonRight"] | s.frontButtonRight, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_RIGHT);
   CrossPointSettings::validateFrontButtonMapping(s);
 
   // Font family — uses dynamic getter/setter in SettingsList so the generic loop skips it.
-  const uint8_t storedFontFamily = doc["fontFamily"] | (uint8_t)0;
+  const uint8_t storedFontFamily = doc["fontFamily"] | s.fontFamily;
   s.fontFamily = clamp(storedFontFamily, CrossPointSettings::BUILTIN_FONT_COUNT, 0);
-  // SD card font family name — not in SettingsList, load manually
-  const char* sfn = doc["sdFontFamilyName"] | "";
-  strncpy(s.sdFontFamilyName, sfn, sizeof(s.sdFontFamilyName) - 1);
-  s.sdFontFamilyName[sizeof(s.sdFontFamilyName) - 1] = '\0';
+  // SD card font family name — not in SettingsList, load manually. saveSettings
+  // omits the key when empty, so only an explicit value overwrites the buffer.
+  if (doc["sdFontFamilyName"].is<const char*>()) {
+    const char* sfn = doc["sdFontFamilyName"] | "";
+    strncpy(s.sdFontFamilyName, sfn, sizeof(s.sdFontFamilyName) - 1);
+    s.sdFontFamilyName[sizeof(s.sdFontFamilyName) - 1] = '\0';
+  }
   if (storedFontFamily == CrossPointSettings::LEGACY_OPENDYSLEXIC && s.sdFontFamilyName[0] == '\0') {
     s.fontFamily = CrossPointSettings::NOTOSERIF;
     strncpy(s.sdFontFamilyName, "OpenDyslexic", sizeof(s.sdFontFamilyName) - 1);
@@ -263,6 +260,18 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
   if (doc["language"].is<const char*>()) {
     s.language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
   }
+}
+
+bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool* needsResave) {
+  if (needsResave) *needsResave = false;
+  JsonDocument doc;
+  auto error = deserializeJson(doc, json);
+  if (error) {
+    LOG_ERR("CPS", "JSON parse error: %s", error.c_str());
+    return false;
+  }
+
+  settingsFromJson(s, doc.as<JsonObjectConst>(), needsResave, /*migrateLegacy=*/true);
 
   LOG_DBG("CPS", "Settings loaded from file");
 

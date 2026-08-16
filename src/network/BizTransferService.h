@@ -16,10 +16,30 @@ class BizTransferService {
 
   static BizTransferService& getInstance();
 
+  // Transfer state machine, mirrored 1:1 by the "state" strings in the BLE
+  // status JSON ("idle", "connecting", ...). Public so the Connect-App screen
+  // can render a live status line per state.
+  enum class State : uint8_t { Idle, Connecting, Ready, Uploading, Complete, SyncReceiving, SyncReady, Error };
+
+  // Snapshot for on-screen display. Fill via getStatus() from the main task
+  // (the activity loop), which is the same task that mutates the underlying
+  // fields (service loop / handleClient), so plain copies are race-free.
+  struct Status {
+    State state = State::Idle;
+    bool bleConnected = false;
+    bool wifiScanning = false;
+    size_t received = 0;
+    size_t total = 0;
+    char filename[192] = {};
+    // Vietnamese status/error text as published to the app; shown verbatim.
+    char message[96] = {};
+  };
+
   void begin();
   void loop();
   void stop();
 
+  void getStatus(Status& out) const;
   bool isBusy() const;
   bool isBleConnected() const;
   bool shouldSkipLoopDelay() const;

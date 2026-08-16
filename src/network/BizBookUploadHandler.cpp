@@ -4,12 +4,20 @@
 #include <esp_task_wdt.h>
 
 #include <cctype>
+#include <cstring>
 
 #include "BizTransferService.h"
 #include "util/BookCacheUtils.h"
 
 namespace {
 constexpr size_t PROGRESS_INTERVAL = 64UL * 1024UL;
+// In-flight upload and finalize-backup suffixes, shared by preparePath(),
+// finishUpload() and sweepOrphans().
+constexpr char PART_SUFFIX[] = ".part";
+constexpr char BAK_SUFFIX[] = ".bak";
+
+String partPathFor(const String& path) { return path + PART_SUFFIX; }
+String bakPathFor(const String& path) { return path + BAK_SUFFIX; }
 
 bool equalsIgnoreCase(const String& left, const String& right) {
   if (left.length() != right.length()) return false;
@@ -23,6 +31,52 @@ bool equalsIgnoreCase(const String& left, const String& right) {
 }  // namespace
 
 BizBookUploadHandler::~BizBookUploadHandler() { abortUpload(); }
+
+namespace {
+// Restore targetPath from an existing backup (left by a crash between the two
+// finalize renames) or drop the backup when the target survived. Returns false
+// only when the backup could not be renamed back over a missing target.
+bool restoreOrDropBackup(const char* backupPath, const char* targetPath) {
+  if (Storage.exists(targetPath)) {
+    Storage.remove(backupPath);
+    return true;
+  }
+  if (Storage.rename(backupPath, targetPath)) {
+    LOG_INF("BIZ", "Restored %s from backup", targetPath);
+    return true;
+  }
+  LOG_ERR("BIZ", "Cannot restore %s from backup", targetPath);
+  return false;
+}
+}  // namespace
+
+void BizBookUploadHandler::sweepOrphans() {
+  // ponytail: top-level /Ebook only — the app uploads flat; recurse if subdirs ever matter.
+  // Names come straight from the listing, so no exists() pre-checks: removing
+  // or renaming a file that vanished in between is the same no-op.
+  for (const String& name : Storage.listFiles("/Ebook", 400)) {
+    if (name.endsWith(PART_SUFFIX)) {
+      char path[160];
+      snprintf(path, sizeof(path), "/Ebook/%s", name.c_str());
+      LOG_INF("BIZ", "Removing stale upload %s", path);
+      Storage.remove(path);
+    } else if (name.endsWith(BAK_SUFFIX)) {
+      char backupPath[160];
+      char targetPath[160];
+      snprintf(backupPath, sizeof(backupPath), "/Ebook/%s", name.c_str());
+      snprintf(targetPath, sizeof(targetPath), "%.*s", static_cast<int>(strlen(backupPath) - (sizeof(BAK_SUFFIX) - 1)),
+               backupPath);
+      restoreOrDropBackup(backupPath, targetPath);
+    }
+  }
+  const String wallpaperPart = partPathFor("/sleep.bmp");
+  if (Storage.exists(wallpaperPart.c_str())) {
+    LOG_INF("BIZ", "Removing stale upload %s", wallpaperPart.c_str());
+    Storage.remove(wallpaperPart.c_str());
+  }
+  const String wallpaperBackup = bakPathFor("/sleep.bmp");
+  if (Storage.exists(wallpaperBackup.c_str())) restoreOrDropBackup(wallpaperBackup.c_str(), "/sleep.bmp");
+}
 
 bool BizBookUploadHandler::canHandle(WebServer& server, const HTTPMethod method, const String& uri) {
   (void)server;
@@ -62,7 +116,7 @@ bool BizBookUploadHandler::preparePath(const String& uri) {
     return false;
   }
 
-  temporaryPath = targetPath + ".part";
+  temporaryPath = partPathFor(targetPath);
   return true;
 }
 
@@ -222,19 +276,13 @@ void BizBookUploadHandler::finishUpload() {
     return;
   }
 
-  const String backupPath = targetPath + ".bak";
-  if (Storage.exists(backupPath.c_str())) {
-    if (!Storage.exists(targetPath.c_str())) {
-      if (!Storage.rename(backupPath.c_str(), targetPath.c_str())) {
-        responseCode = 500;
-        responseMessage = "Cannot restore existing book";
-        abortUpload();
-        transferService.onUploadFailed(responseMessage);
-        return;
-      }
-    } else {
-      Storage.remove(backupPath.c_str());
-    }
+  const String backupPath = bakPathFor(targetPath);
+  if (Storage.exists(backupPath.c_str()) && !restoreOrDropBackup(backupPath.c_str(), targetPath.c_str())) {
+    responseCode = 500;
+    responseMessage = "Cannot restore existing book";
+    abortUpload();
+    transferService.onUploadFailed(responseMessage);
+    return;
   }
   const bool replacingExisting = Storage.exists(targetPath.c_str());
   if (replacingExisting && !Storage.rename(targetPath.c_str(), backupPath.c_str())) {

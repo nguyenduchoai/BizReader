@@ -6,6 +6,7 @@
 
 #include "NetworkModeSelectionActivity.h"
 #include "activities/Activity.h"
+#include "network/BizTransferService.h"
 #include "network/CrossPointWebServer.h"
 
 // Web server activity states
@@ -54,8 +55,14 @@ class CrossPointWebServerActivity final : public Activity {
   int lastWifiBars = 0;
 
   unsigned long appConnectStartedAt = 0;
-  bool lastBleConnected = false;
   static constexpr unsigned long APP_CONNECT_TIMEOUT_MS = 5UL * 60UL * 1000UL;
+
+  // Live BizTransfer status: polled each loop, re-rendered only on state
+  // transitions (renderedBizStatus is what the e-ink currently shows).
+  BizTransferService::Status bizStatus;
+  BizTransferService::Status renderedBizStatus;
+  unsigned long lastBizProgressRenderAt = 0;
+  static constexpr unsigned long BIZ_PROGRESS_RENDER_INTERVAL_MS = 2000;
 
   void renderServerRunning() const;
   void renderAppConnect() const;

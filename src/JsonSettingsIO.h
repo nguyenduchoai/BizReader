@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ArduinoJson.h>
+
 #include <vector>
 
 class CrossPointSettings;
@@ -14,6 +16,14 @@ namespace JsonSettingsIO {
 // CrossPointSettings
 bool saveSettings(const CrossPointSettings& s, const char* path);
 bool loadSettings(CrossPointSettings& s, const char* json, bool* needsResave = nullptr);
+// In-memory halves of the settings file format, shared with the BLE sync
+// snapshot so settings.json and the app payload stay one format/one validator.
+void settingsToJson(const CrossPointSettings& s, JsonDocument& doc);
+// Applies a full or partial settings object: absent keys keep their current
+// values, out-of-range values are clamped exactly like the file loader.
+// migrateLegacy enables pre-refactor file migrations (file loads only).
+void settingsFromJson(CrossPointSettings& s, JsonObjectConst doc, bool* needsResave = nullptr,
+                      bool migrateLegacy = false);
 
 // CrossPointState
 bool saveState(const CrossPointState& s, const char* path);

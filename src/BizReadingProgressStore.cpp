@@ -4,6 +4,7 @@
 #include <HalClock.h>
 #include <HalStorage.h>
 #include <Logging.h>
+#include <sys/time.h>
 
 #include <algorithm>
 #include <cmath>
@@ -34,9 +35,10 @@ int64_t daysFromCivil(int year, const unsigned month, const unsigned day) {
   return era * 146097LL + static_cast<int>(dayOfEra) - 719468LL;
 }
 
+bool systemClockValid() { return time(nullptr) > static_cast<time_t>(MIN_VALID_EPOCH_SECONDS); }
+
 uint64_t currentEpochMs() {
-  const time_t now = time(nullptr);
-  if (now > static_cast<time_t>(MIN_VALID_EPOCH_SECONDS)) return static_cast<uint64_t>(now) * 1000ULL;
+  if (systemClockValid()) return static_cast<uint64_t>(time(nullptr)) * 1000ULL;
 
   uint16_t year = 0;
   uint8_t month = 0;
@@ -237,4 +239,46 @@ std::vector<BizReadingProgress> BizReadingProgressStore::list(const int maxItems
 uint64_t BizReadingProgressStore::nextTimestamp(const uint64_t previous) {
   const uint64_t incremented = previous == UINT64_MAX ? UINT64_MAX : previous + 1;
   return std::max(currentEpochMs(), incremented);
+}
+
+void BizReadingProgressStore::maybeAdoptExternalEpochMs(const uint64_t epochMs) {
+  if (epochMs / 1000ULL <= MIN_VALID_EPOCH_SECONDS) return;  // implausible input
+  if (systemClockValid()) return;                            // never override a valid clock
+  timeval now{};
+  now.tv_sec = static_cast<time_t>(epochMs / 1000ULL);
+  now.tv_usec = static_cast<suseconds_t>((epochMs % 1000ULL) * 1000ULL);
+  if (settimeofday(&now, nullptr) != 0) {
+    LOG_ERR("BIZ", "settimeofday failed");
+    return;
+  }
+  LOG_INF("BIZ", "Adopted external clock: %llu ms", static_cast<unsigned long long>(epochMs));
+
+  // One-shot migration: records stamped by the counter fallback during the
+  // dead-clock era get real timestamps, spaced to preserve their relative
+  // order (epochMs >> maxCounter, so the subtraction cannot underflow).
+  // Records with updatedAt == 0 are deliberately excluded: both sync sides
+  // already treat 0 as "legacy, position wins" and must keep doing so.
+  // Runs at most once per dead-clock episode — from here on systemClockValid()
+  // is true and this function returns above.
+  // ponytail: assumes counter-stamped device records are the newest activity;
+  // loses phone progress in the mirror case (device sat un-synced while the
+  // user read ahead on the phone) — accepted because counters only survive
+  // while un-synced and device-then-connect is the dominant flow.
+  constexpr uint64_t MIN_VALID_EPOCH_MS = MIN_VALID_EPOCH_SECONDS * 1000ULL;
+  const std::vector<BizReadingProgress> records = list();
+  uint64_t maxCounter = 0;
+  for (const BizReadingProgress& record : records) {
+    if (record.updatedAt > 0 && record.updatedAt < MIN_VALID_EPOCH_MS) {
+      maxCounter = std::max(maxCounter, record.updatedAt);
+    }
+  }
+  if (maxCounter == 0) return;
+  for (const BizReadingProgress& record : records) {
+    if (record.updatedAt == 0 || record.updatedAt >= MIN_VALID_EPOCH_MS) continue;
+    BizReadingProgress migrated = record;
+    migrated.updatedAt = epochMs - (maxCounter - record.updatedAt);
+    if (!save(migrated)) {
+      LOG_ERR("BIZ", "Cannot migrate counter timestamp for %s", migrated.filename.c_str());
+    }
+  }
 }

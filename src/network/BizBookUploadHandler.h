@@ -16,6 +16,10 @@ class BizBookUploadHandler final : public RequestHandler {
   void raw(WebServer& server, const String& uri, HTTPRaw& raw) override;
   bool handle(WebServer& server, HTTPMethod method, const String& uri) override;
 
+  // One-shot boot cleanup: drop .part files orphaned by power loss and restore
+  // (or drop) .bak files left by a crash between the two finalize renames.
+  static void sweepOrphans();
+
  private:
   static constexpr size_t MAX_BOOK_SIZE = 128UL * 1024UL * 1024UL;
   static constexpr size_t MAX_WALLPAPER_SIZE = 8UL * 1024UL * 1024UL;

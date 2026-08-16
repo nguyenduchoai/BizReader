@@ -99,6 +99,11 @@ void CrossPointWebServerActivity::onExit() {
   if (networkMode == NetworkMode::CONNECT_BIZREADER_APP) {
     BIZ_TRANSFER.stop();
     LOG_DBG("WEBACT", "BizReader App connection stopped");
+    // NimBLE (and any scan/HTTP Wi-Fi used during the session) does not return
+    // all of its heap on deinit; a follow-up radio session then starts ~70KB
+    // short and fails half-way (blank screen: even the font glyph cache cannot
+    // allocate). Reclaim via restart, same policy as the Wi-Fi modes below.
+    silentRestart();
     return;
   }
 
@@ -133,7 +138,9 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
   if (mode == NetworkMode::CONNECT_BIZREADER_APP) {
     state = WebServerActivityState::APP_CONNECT;
     appConnectStartedAt = millis();
-    lastBleConnected = false;
+    bizStatus = BizTransferService::Status{};
+    renderedBizStatus = BizTransferService::Status{};
+    lastBizProgressRenderAt = 0;
     BIZ_TRANSFER.begin();
     requestUpdate();
     return;
@@ -285,9 +292,24 @@ void CrossPointWebServerActivity::startWebServer() {
 
 void CrossPointWebServerActivity::loop() {
   if (state == WebServerActivityState::APP_CONNECT) {
-    const bool connected = BIZ_TRANSFER.isBleConnected();
-    if (connected != lastBleConnected) {
-      lastBleConnected = connected;
+    BIZ_TRANSFER.getStatus(bizStatus);
+    // E-ink: repaint only on real transitions. Byte-level upload progress is
+    // throttled to a 10% step or one repaint per BIZ_PROGRESS_RENDER_INTERVAL_MS.
+    bool changed = bizStatus.state != renderedBizStatus.state ||
+                   bizStatus.bleConnected != renderedBizStatus.bleConnected ||
+                   bizStatus.wifiScanning != renderedBizStatus.wifiScanning ||
+                   strcmp(bizStatus.message, renderedBizStatus.message) != 0 ||
+                   strcmp(bizStatus.filename, renderedBizStatus.filename) != 0;
+    if (!changed && bizStatus.state == BizTransferService::State::Uploading && bizStatus.total > 0 &&
+        bizStatus.received != renderedBizStatus.received) {
+      const size_t decile = bizStatus.received * 10 / bizStatus.total;
+      const size_t renderedDecile =
+          renderedBizStatus.total > 0 ? renderedBizStatus.received * 10 / renderedBizStatus.total : 0;
+      changed = decile != renderedDecile || millis() - lastBizProgressRenderAt >= BIZ_PROGRESS_RENDER_INTERVAL_MS;
+    }
+    if (changed) {
+      renderedBizStatus = bizStatus;
+      lastBizProgressRenderAt = millis();
       requestUpdate();
     }
 
@@ -426,17 +448,73 @@ void CrossPointWebServerActivity::render(RenderLock&&) {
 }
 
 void CrossPointWebServerActivity::renderAppConnect() const {
+  using BizState = BizTransferService::State;
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
   const int midY = pageHeight / 2;
+  const auto& status = renderedBizStatus;
 
   renderer.clearScreen();
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CONNECT_APP));
   renderer.drawCenteredText(UI_12_FONT_ID, midY - 25,
-                            lastBleConnected ? tr(STR_APP_BLE_CONNECTED) : tr(STR_APP_BLE_WAITING), true,
+                            status.bleConnected ? tr(STR_APP_BLE_CONNECTED) : tr(STR_APP_BLE_WAITING), true,
                             EpdFontFamily::BOLD);
   renderer.drawCenteredText(UI_10_FONT_ID, midY + 15, tr(STR_APP_BLE_INSTRUCTION), true);
+
+  // Live transfer status. One line per state; for errors the service's own
+  // (Vietnamese) message is shown verbatim instead of duplicating i18n keys.
+  const char* line = nullptr;
+  switch (status.state) {
+    case BizState::Connecting:
+      line = tr(STR_APP_STATUS_WIFI_CONNECTING);
+      break;
+    case BizState::Ready:
+      line = tr(STR_APP_STATUS_TRANSFER_READY);
+      break;
+    case BizState::Complete:
+      line = tr(STR_APP_STATUS_DONE);
+      break;
+    case BizState::SyncReceiving:
+      line = tr(STR_APP_STATUS_SYNC_RECEIVING);
+      break;
+    case BizState::SyncReady:
+      line = tr(STR_APP_STATUS_SYNCING);
+      break;
+    case BizState::Error:
+      line = status.message[0] != '\0' ? status.message : tr(STR_CONNECTION_FAILED);
+      break;
+    case BizState::Uploading:  // rendered as filename + progress bar below
+    case BizState::Idle:       // the connected/waiting headline covers it
+    default:
+      break;
+  }
+  if (status.wifiScanning) line = tr(STR_APP_STATUS_WIFI_SCANNING);
+
+  const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+  int y = midY + 15 + lineHeight * 2 + metrics.verticalSpacing;
+  const int contentWidth = pageWidth - metrics.contentSidePadding * 2;
+  if (status.state == BizState::Uploading && status.total > 0) {
+    std::string label = tr(STR_CALIBRE_RECEIVING);
+    label += status.filename;
+    label = renderer.truncatedText(UI_10_FONT_ID, label.c_str(), contentWidth, EpdFontFamily::REGULAR);
+    renderer.drawCenteredText(UI_10_FONT_ID, y, label.c_str(), true);
+    y += lineHeight + metrics.verticalSpacing;
+    GUI.drawProgressBar(renderer, Rect{metrics.contentSidePadding, y, contentWidth, metrics.progressBarHeight},
+                        status.received, status.total);
+    y += metrics.progressBarHeight + metrics.verticalSpacing;
+    char bytesLine[48];
+    snprintf(bytesLine, sizeof(bytesLine), "%.1f / %.1f MB", status.received / (1024.0 * 1024.0),
+             status.total / (1024.0 * 1024.0));
+    renderer.drawCenteredText(SMALL_FONT_ID, y, bytesLine, true);
+  } else if (line) {
+    renderer.drawCenteredText(UI_10_FONT_ID, y, line, true, EpdFontFamily::BOLD);
+    if (status.state == BizState::Complete && status.filename[0] != '\0') {
+      y += lineHeight + metrics.verticalSpacing;
+      const std::string name = renderer.truncatedText(UI_10_FONT_ID, status.filename, contentWidth);
+      renderer.drawCenteredText(UI_10_FONT_ID, y, name.c_str(), true);
+    }
+  }
 
   const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
