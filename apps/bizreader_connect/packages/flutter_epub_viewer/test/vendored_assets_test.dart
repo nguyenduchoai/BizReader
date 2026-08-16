@@ -3,6 +3,17 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('epubView.js subscribes the lowercase epub.js display error event', () {
+    // epub.js 0.3.x emits EVENTS.RENDITION.DISPLAY_ERROR = 'displayerror';
+    // subscribing the camelCase name silently disables CFI recovery.
+    final source = File(
+      'lib/assets/webpage/html/epubView.js',
+    ).readAsStringSync();
+
+    expect(source, contains("rendition.on('displayerror'"));
+    expect(source, isNot(contains("rendition.on('displayError'")));
+  });
+
   test('vendored JSZip is at least the hardened 3.10.1 baseline', () {
     final source = File(
       'lib/assets/webpage/dist/jszip.min.js',

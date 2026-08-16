@@ -951,7 +951,9 @@ function loadBook(data, opts) {
     });
   });
 
-  rendition.on('displayError', function (e) {
+  // epub.js emits EVENTS.RENDITION.DISPLAY_ERROR = 'displayerror' (lowercase).
+  // The Dart-facing channel name stays 'displayError'.
+  rendition.on('displayerror', function (e) {
     var message = e && e.message ? e.message : String(e || 'Unable to display this EPUB.');
     window.flutter_inappwebview.callHandler('displayError', message);
   })

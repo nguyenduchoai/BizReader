@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bizreader_connect/src/app.dart';
 import 'package:bizreader_connect/src/app_controller.dart';
 import 'package:bizreader_connect/src/models/local_book.dart';
 import 'package:bizreader_connect/src/models/device_config.dart';
+import 'package:bizreader_connect/src/screens/device_settings_screen.dart';
 import 'package:bizreader_connect/src/services/biz_transfer_ble_client.dart';
 import 'package:bizreader_connect/src/services/book_library_service.dart';
 import 'package:bizreader_connect/src/services/device_preferences.dart';
@@ -89,6 +91,39 @@ void main() {
       );
 
       expect(imported.remoteFilename, 'same-abcdef01.epub');
+      expect(
+        controller.books.map((book) => book.remoteFilename).toSet(),
+        hasLength(2),
+      );
+    },
+  );
+
+  test(
+    'collision suffix keeps a max-length device name within the byte budget',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      // A Vietnamese title clamped to the cap: appending any suffix would
+      // overflow the firmware budget unless the stem is trimmed to make room.
+      final longFilename = BookLibraryService.clampRemoteFilename(
+        '${'ế' * 100}.epub',
+      );
+      final controller = AppController(
+        DevicePreferences(),
+        bookLibrary: _CollisionBookLibrary(longFilename),
+      );
+      await controller.load();
+
+      final imported = await controller.importBook(
+        File('/tmp/second.epub'),
+        'same.epub',
+      );
+
+      expect(imported.remoteFilename, endsWith('-abcdef01.epub'));
+      expect(imported.remoteFilename, isNot(longFilename));
+      expect(
+        utf8.encode(imported.remoteFilename).length,
+        lessThanOrEqualTo(BookLibraryService.maxRemoteFilenameBytes),
+      );
       expect(
         controller.books.map((book) => book.remoteFilename).toSet(),
         hasLength(2),
@@ -214,6 +249,17 @@ void main() {
     await tester.pumpWidget(BizReaderApp(controller: controller));
     await tester.tap(find.text('Thiết bị'));
     await tester.pumpAndSettle();
+    // Các thẻ Wi-Fi/cài đặt máy đọc đẩy mục Giới thiệu xuống dưới màn hình.
+    await tester.scrollUntilVisible(
+      find.text('Giới thiệu'),
+      120,
+      scrollable: find
+          .descendant(
+            of: find.byType(DeviceSettingsScreen),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.tap(find.text('Giới thiệu'));
     await tester.pumpAndSettle();
 
@@ -274,25 +320,29 @@ class _FakeBleClient extends BizTransferBleClient {
 }
 
 class _CollisionBookLibrary extends BookLibraryService {
+  _CollisionBookLibrary([this.existingFilename = 'same.epub']);
+
+  final String existingFilename;
+
   @override
-  Future<List<LocalBook>> load() async => const [
+  Future<List<LocalBook>> load() async => [
     LocalBook(
       id: 'existing-id',
       title: 'Sách đầu',
       author: '',
       filePath: '/tmp/first.epub',
-      remoteFilename: 'same.epub',
+      remoteFilename: existingFilename,
     ),
   ];
 
   @override
   Future<LocalBook> importEpub(File source, String originalFilename) async =>
-      const LocalBook(
+      LocalBook(
         id: 'abcdef0123456789',
         title: 'Sách sau',
         author: '',
         filePath: '/tmp/second.epub',
-        remoteFilename: 'same.epub',
+        remoteFilename: existingFilename,
       );
 
   @override

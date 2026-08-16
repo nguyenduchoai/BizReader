@@ -112,6 +112,8 @@ class _IoEpubViewState extends State<_IoEpubView> {
   final GlobalKey _webViewKey = GlobalKey();
   static InAppLocalhostServer? _localhostServer;
   bool _isServerReady = defaultTargetPlatform != TargetPlatform.macOS;
+  Timer? _longPressDelayTimer;
+  Timer? _longPressPollTimer;
 
   late final InAppWebViewSettings _settings = InAppWebViewSettings(
     isInspectable: kDebugMode,
@@ -167,6 +169,51 @@ class _IoEpubViewState extends State<_IoEpubView> {
     }
   }
 
+  @override
+  void dispose() {
+    _longPressDelayTimer?.cancel();
+    _longPressPollTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Evaluates [source] and swallows failures: the WebView may be tearing
+  /// down (or its renderer gone) while a poll tick is still in flight, and an
+  /// unhandled async error here would surface as a crash report.
+  void _safeEvaluate(InAppWebViewController controller, String source) {
+    controller.evaluateJavascript(source: source).catchError((Object error) {
+      if (kDebugMode) {
+        debugPrint("[EpubViewer] selection poll failed: $error");
+      }
+      return null;
+    });
+  }
+
+  // On iPad, long press creates a selection but events don't fire. Trigger a
+  // JavaScript check for the selection after a short delay and then poll
+  // periodically while handles may be dragged. Repeated long-presses restart
+  // the cycle instead of stacking timers.
+  void _startLongPressSelectionPolling(InAppWebViewController controller) {
+    _longPressDelayTimer?.cancel();
+    _longPressPollTimer?.cancel();
+    _longPressDelayTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _safeEvaluate(controller, 'checkSelectionAfterLongPress()');
+
+      var checkCount = 0;
+      const maxChecks = 67; // 67 * 150ms = ~10 seconds
+      _longPressPollTimer = Timer.periodic(const Duration(milliseconds: 150), (
+        timer,
+      ) {
+        checkCount++;
+        if (!mounted || checkCount > maxChecks) {
+          timer.cancel();
+          return;
+        }
+        _safeEvaluate(controller, 'checkSelectionPeriodically()');
+      });
+    });
+  }
+
   Future<void> _initLocalServer() async {
     _localhostServer ??= InAppLocalhostServer();
     if (!_localhostServer!.isRunning()) {
@@ -186,6 +233,7 @@ class _IoEpubViewState extends State<_IoEpubView> {
     }
 
     final config = widget.config;
+    final onRendererCrashed = config.onRendererCrashed;
     final isMacOs = defaultTargetPlatform == TargetPlatform.macOS;
     final port = _localhostServer?.port ?? 8080;
     final url =
@@ -265,28 +313,26 @@ class _IoEpubViewState extends State<_IoEpubView> {
           }
         },
         onLongPressHitTestResult: (controller, hitTestResult) {
-          // On iPad, long press creates a selection but events don't fire.
-          // Trigger a JavaScript check for the selection after a short delay
-          // and then poll periodically while handles may be dragged.
-          Future.delayed(const Duration(milliseconds: 300), () {
-            controller.evaluateJavascript(
-              source: 'checkSelectionAfterLongPress()',
-            );
-
-            var checkCount = 0;
-            const maxChecks = 67; // 67 * 150ms = ~10 seconds
-            Timer.periodic(const Duration(milliseconds: 150), (timer) {
-              checkCount++;
-              if (checkCount > maxChecks) {
-                timer.cancel();
-                return;
-              }
-              controller.evaluateJavascript(
-                source: 'checkSelectionPeriodically()',
-              );
-            });
-          });
+          _startLongPressSelectionPolling(controller);
         },
+        // Both crash handlers are registered only when the embedder can
+        // recover via onRendererCrashed. On Android, setting the handler makes
+        // the plugin's WebViewClient return true, which keeps the app process
+        // alive when the renderer dies (API 26+); leaving it null preserves
+        // the platform default for callback-less embedders.
+        onRenderProcessGone: onRendererCrashed == null
+            ? null
+            : (controller, detail) {
+                if (kDebugMode) {
+                  debugPrint(
+                    "[EpubViewer] WebView renderer gone (didCrash: ${detail.didCrash})",
+                  );
+                }
+                onRendererCrashed();
+              },
+        onWebContentProcessDidTerminate: onRendererCrashed == null
+            ? null
+            : (controller) => onRendererCrashed(),
         gestureRecognizers: {
           Factory<VerticalDragGestureRecognizer>(
             () => VerticalDragGestureRecognizer(),

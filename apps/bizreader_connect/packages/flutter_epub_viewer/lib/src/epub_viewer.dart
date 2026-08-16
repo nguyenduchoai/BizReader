@@ -38,6 +38,7 @@ class EpubViewer extends StatefulWidget {
     this.onLocationLoaded,
     this.onRelocated,
     this.onDisplayError,
+    this.onRendererCrashed,
     this.onTextSelected,
     this.displaySettings,
     this.selectionContextMenu,
@@ -83,6 +84,16 @@ class EpubViewer extends StatefulWidget {
 
   /// Called when epub.js or the local renderer cannot display the book.
   final ValueChanged<String>? onDisplayError;
+
+  /// Called when the WebView renderer process dies (Android, API 26+) or the
+  /// web content process is terminated by the OS (iOS/macOS).
+  ///
+  /// The viewer is unusable afterwards: the embedding app must remove this
+  /// widget from the tree and build a fresh one to recover. On Android,
+  /// providing this callback also suppresses the platform default of killing
+  /// the entire app process when the renderer crashes (e.g. renderer OOM on
+  /// huge books); when it is null, the default behavior is preserved.
+  final VoidCallback? onRendererCrashed;
 
   ///Callback when initial position loading starts (for showing progress indicator)
   ///Receives the type: 'xpath' or 'cfi'
@@ -560,6 +571,7 @@ class _EpubViewerState extends State<EpubViewer> {
         contextMenu: widget.selectionContextMenu,
         suppressNativeContextMenu: widget.suppressNativeContextMenu,
         onDisplayError: widget.onDisplayError,
+        onRendererCrashed: widget.onRendererCrashed,
         disableVerticalScroll: widget.displaySettings?.snap ?? false,
         onControllerCreated: (controller) {
           webViewController = controller;
@@ -590,6 +602,12 @@ class _EpubViewerState extends State<EpubViewer> {
         if (result == 'no-selection') {
           _stopSelectionMonitoring();
           _blockGesturesWhenSelected(false);
+        }
+      }).catchError((Object error) {
+        // The WebView may be gone mid-flight; a dangling .then would turn
+        // that into an unhandled async error.
+        if (kDebugMode) {
+          debugPrint("[EpubViewer] selection monitoring failed: $error");
         }
       });
     });

@@ -9,7 +9,6 @@ import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
 import '../app_controller.dart';
 import '../models/local_book.dart';
 import '../models/reader_preferences.dart';
-import '../services/book_library_service.dart';
 import '../services/epub_archive_guard.dart';
 import '../services/reader_preferences_store.dart';
 import '../services/reader_progress.dart';
@@ -57,11 +56,14 @@ class _ReaderScreenState extends State<ReaderScreen>
   int _lastTapAt = 0;
   bool _showChrome = true;
   bool _epubReady = false;
+  bool _epubValidated = false;
+  bool _rendererCrashed = false;
   bool _closing = false;
   bool _clearRejectedCfi = false;
   String? _readerError;
-  Uint8List? _epubBytes;
-  late final ReaderResumeCoordinator _resumeCoordinator;
+  late ReaderResumeCoordinator _resumeCoordinator;
+
+  static const _rendererCrashedMessage = 'Trình đọc gặp sự cố. Nhấn để tải lại.';
 
   @override
   void initState() {
@@ -90,14 +92,19 @@ class _ReaderScreenState extends State<ReaderScreen>
     unawaited(_loadReaderState());
     _scheduleChromeHide();
     if (!widget.book.demo) {
-      unawaited(_loadEpubBytes());
-      _loadTimer = Timer(const Duration(seconds: 35), () {
-        if (!mounted || _epubReady) return;
-        setState(() {
-          _readerError = 'Sách mất quá nhiều thời gian để phân trang.';
-        });
-      });
+      unawaited(_prepareEpubSource());
+      _armLoadTimer();
     }
+  }
+
+  void _armLoadTimer() {
+    _loadTimer?.cancel();
+    _loadTimer = Timer(const Duration(seconds: 35), () {
+      if (!mounted || _epubReady) return;
+      setState(() {
+        _readerError = 'Sách mất quá nhiều thời gian để phân trang.';
+      });
+    });
   }
 
   @override
@@ -133,14 +140,15 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (_epubReady) _applyPreferencesToEpub();
   }
 
-  Future<void> _loadEpubBytes() async {
+  Future<void> _prepareEpubSource() async {
     try {
-      final bytes = await BookLibraryService().readEpubBytes(
-        File(widget.book.filePath),
-      );
-      if (bytes.isEmpty) throw const FormatException('empty_epub');
+      // Validate the archive (zip-bomb / truncation guard) before handing the
+      // file to the WebView. inspect() reads only the ZIP directory, headers
+      // and mimetype, so no whole-book buffer ever lands on the Dart heap;
+      // the viewer re-reads the file lazily.
+      await EpubArchiveGuard().inspect(File(widget.book.filePath));
       if (!mounted) return;
-      setState(() => _epubBytes = bytes);
+      setState(() => _epubValidated = true);
     } on EpubArchiveGuardException catch (error) {
       if (!mounted) return;
       _loadTimer?.cancel();
@@ -168,6 +176,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     setState(() {
       _epubReady = true;
       _readerError = null;
+      _rendererCrashed = false;
     });
     _applyPreferencesToEpub();
   }
@@ -203,6 +212,37 @@ class _ReaderScreenState extends State<ReaderScreen>
     setState(() {
       _readerError = 'Không thể hiển thị trang EPUB này.';
     });
+  }
+
+  void _onRendererCrashed() {
+    // The WebView renderer process died (typically OOM on a huge EPUB). The
+    // platform view is unusable; tear it down and offer a manual reload.
+    if (!mounted) return;
+    _loadTimer?.cancel();
+    setState(() {
+      _epubReady = false;
+      _epubValidated = false;
+      _rendererCrashed = true;
+      _readerError = _rendererCrashedMessage;
+    });
+  }
+
+  void _restartReader() {
+    // Resume from the position we had when the renderer died, exactly like a
+    // fresh open: reset the resume coordinator, re-validate the file and let a
+    // brand-new platform view run the readyToLoad -> loadBook flow.
+    _resumeCoordinator = ReaderResumeCoordinator(
+      initialCfi: _validCfi(_currentCfi),
+      initialProgress: _progress,
+    );
+    setState(() {
+      _readerError = null;
+      _rendererCrashed = false;
+      _epubReady = false;
+      _epubValidated = false;
+    });
+    unawaited(_prepareEpubSource());
+    _armLoadTimer();
   }
 
   void _onChaptersLoaded(List<EpubChapter> chapters) {
@@ -332,39 +372,33 @@ class _ReaderScreenState extends State<ReaderScreen>
     return _saveChain;
   }
 
-  Future<void> _flushProgress() async {
-    _saveTimer?.cancel();
-    await _persistProgress();
-  }
-
-  Future<void> _persistProgressBestEffort() async {
+  /// Runs [save], logging failures under [label] instead of throwing: a full
+  /// disk must never take down the reading session.
+  Future<void> _persistBestEffort(
+    Future<void> Function() save,
+    String label,
+  ) async {
     try {
-      await _persistProgress();
+      await save();
     } on Object catch (error, stackTrace) {
-      _reportProgressSaveError(error, stackTrace);
+      debugPrint('$label: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
+
+  Future<void> _persistProgressBestEffort() =>
+      _persistBestEffort(_persistProgress, 'Không lưu được tiến độ đọc');
 
   Future<void> _flushProgressBestEffort() async {
     _saveTimer?.cancel();
     await _persistProgressBestEffort();
   }
 
-  void _reportProgressSaveError(Object error, StackTrace stackTrace) {
-    debugPrint('Không lưu được tiến độ đọc: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-
   Future<void> _closeReader() async {
     if (_closing) return;
     _closing = true;
-    try {
-      await _flushProgress();
-    } on Object catch (error, stackTrace) {
-      _reportProgressSaveError(error, stackTrace);
-    } finally {
-      if (mounted) Navigator.pop(context);
-    }
+    await _flushProgressBestEffort();
+    if (mounted) Navigator.pop(context);
   }
 
   void _scheduleChromeHide() {
@@ -449,7 +483,12 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   void _updatePreferences(ReaderPreferences next) {
     setState(() => _preferences = next);
-    unawaited(_preferencesStore.save(next));
+    unawaited(
+      _persistBestEffort(
+        () => _preferencesStore.save(next),
+        'Không lưu được tùy chỉnh đọc',
+      ),
+    );
     if (_epubReady) _applyPreferencesToEpub();
   }
 
@@ -512,6 +551,12 @@ class _ReaderScreenState extends State<ReaderScreen>
     return '#${value.toRadixString(16).padLeft(6, '0')}';
   }
 
+  Future<void> _saveBookmarksBestEffort(List<ReaderBookmark> bookmarks) =>
+      _persistBestEffort(
+        () => _preferencesStore.saveBookmarks(widget.book.id, bookmarks),
+        'Không lưu được dấu trang',
+      );
+
   bool get _isBookmarked {
     final cfi = _currentCfi;
     return cfi != null && _bookmarks.any((item) => item.cfi == cfi);
@@ -536,7 +581,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       next.removeAt(index);
     }
     setState(() => _bookmarks = next);
-    await _preferencesStore.saveBookmarks(widget.book.id, next);
+    await _saveBookmarksBestEffort(next);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -584,6 +629,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                     theme: theme,
                     message: message,
                     onBack: _closeReader,
+                    onRetry: _rendererCrashed ? _restartReader : null,
                   ),
                 _buildTopChrome(theme),
                 _buildBottomChrome(theme),
@@ -596,13 +642,14 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Widget _buildEpubReader(ReaderThemeSpec theme) {
-    final bytes = _epubBytes;
-    if (bytes == null) return ColoredBox(color: theme.background);
+    if (!_epubValidated) return ColoredBox(color: theme.background);
     return ColoredBox(
       color: theme.background,
       child: EpubViewer(
         epubController: _epubController,
-        epubSource: EpubSource.fromData(bytes),
+        // Cheap lazy wrapper (no IO at construction); the viewer reads it once
+        // per platform view, so rebuilding it here never reloads the book.
+        epubSource: EpubSource.fromFilePath(widget.book.filePath),
         initialCfi: _currentCfi,
         displaySettings: EpubDisplaySettings(
           fontSize: _preferences.fontSize.round(),
@@ -618,6 +665,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         onChaptersLoaded: _onChaptersLoaded,
         onRelocated: _onRelocated,
         onDisplayError: _onEpubDisplayError,
+        onRendererCrashed: _onRendererCrashed,
         onTouchDown: _onTouchDown,
         onTouchUp: _onTouchUp,
       ),
@@ -992,7 +1040,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             onPressed: () async {
               final next = [..._bookmarks]..remove(bookmark);
               setState(() => _bookmarks = next);
-              await _preferencesStore.saveBookmarks(widget.book.id, next);
+              await _saveBookmarksBestEffort(next);
             },
             icon: Icon(Icons.delete_outline, color: theme.secondary),
           ),
@@ -1110,11 +1158,13 @@ class _ReaderError extends StatelessWidget {
     required this.theme,
     required this.message,
     required this.onBack,
+    this.onRetry,
   });
 
   final ReaderThemeSpec theme;
   final String message;
   final VoidCallback onBack;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -1139,11 +1189,24 @@ class _ReaderError extends StatelessWidget {
                   style: TextStyle(color: theme.text, fontSize: 16),
                 ),
                 const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: onBack,
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Về thư viện'),
-                ),
+                if (onRetry case final retry?) ...[
+                  FilledButton.icon(
+                    onPressed: retry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tải lại'),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Về thư viện'),
+                  ),
+                ] else
+                  FilledButton.icon(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Về thư viện'),
+                  ),
               ],
             ),
           ),

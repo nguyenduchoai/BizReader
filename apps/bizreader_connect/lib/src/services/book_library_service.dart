@@ -60,7 +60,18 @@ class BookLibraryService {
       await booksDirectory.create(recursive: true);
       final safeFilename = _safeFilename(originalFilename);
       final destination = File('${booksDirectory.path}/$id.epub');
-      if (!await destination.exists()) await source.copy(destination.path);
+      // Copy via temp + rename so an app death mid-copy never leaves a
+      // truncated file at the final path (dedupe-by-content-id would otherwise
+      // skip the copy forever). A length mismatch repairs installs truncated
+      // by older app versions.
+      final needsCopy =
+          !await destination.exists() ||
+          await destination.length() != bytes.length;
+      if (needsCopy) {
+        final temp = File('${destination.path}.tmp');
+        await source.copy(temp.path);
+        await temp.rename(destination.path);
+      }
 
       return LocalBook(
         id: id,
@@ -116,10 +127,50 @@ class BookLibraryService {
     await preferences.setString(_storageKey, jsonEncode(persistent));
   }
 
+  /// Firmware rejects progress sync for names over 191 UTF-8 bytes; 180 leaves
+  /// headroom for the collision suffix added by the app controller.
+  static const maxRemoteFilenameBytes = 180;
+
   String _safeFilename(String value) {
     final normalized = value.replaceAll(RegExp(r'[\\/:*?"<>|]'), '-').trim();
-    if (normalized.toLowerCase().endsWith('.epub')) return normalized;
-    return '$normalized.epub';
+    final named = normalized.toLowerCase().endsWith('.epub')
+        ? normalized
+        : '$normalized.epub';
+    return clampRemoteFilename(named);
+  }
+
+  /// Clamps [filename] (which must end with `.epub`) to at most
+  /// [maxRemoteFilenameBytes] UTF-8 bytes including the extension, cutting the
+  /// stem at a UTF-8 character boundary (Vietnamese characters are multi-byte)
+  /// and preserving the extension.
+  static String clampRemoteFilename(String filename) {
+    if (utf8.encode(filename).length <= maxRemoteFilenameBytes) {
+      return filename;
+    }
+    final extension = filename.substring(filename.length - '.epub'.length);
+    final stem = filename.substring(0, filename.length - extension.length);
+    final budget = maxRemoteFilenameBytes - utf8.encode(extension).length;
+    return '${truncateUtf8(stem, budget)}$extension';
+  }
+
+  /// Cuts [value] at a UTF-8 character boundary so it encodes to at most
+  /// [maxBytes] bytes, dropping any trailing whitespace left by the cut.
+  static String truncateUtf8(String value, int maxBytes) {
+    final truncated = StringBuffer();
+    var used = 0;
+    for (final rune in value.runes) {
+      final runeBytes = rune < 0x80
+          ? 1
+          : rune < 0x800
+          ? 2
+          : rune < 0x10000
+          ? 3
+          : 4;
+      if (used + runeBytes > maxBytes) break;
+      used += runeBytes;
+      truncated.writeCharCode(rune);
+    }
+    return truncated.toString().trimRight();
   }
 
   String _titleFromFilename(String value) {

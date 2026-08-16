@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'models/biz_transfer_status.dart';
 import 'models/biz_sync_snapshot.dart';
 import 'models/biz_content.dart';
+import 'models/biz_device_section.dart';
 import 'models/device_config.dart';
 import 'models/device_reading_progress.dart';
 import 'models/local_book.dart';
@@ -46,14 +48,35 @@ class AppController extends ChangeNotifier {
   String? connectionMessage;
   List<LocalBook> books = const [];
   BizContent content = const BizContent();
+  BizDeviceState deviceState = const BizDeviceState();
   bool demoMode = false;
   bool contentSyncing = false;
   String? contentSyncMessage;
+  bool wifiScanning = false;
+
+  /// Phiên truyền sách (prepareTransfer..finishTransfer) đang mở — client BLE
+  /// dùng chung, thao tác khác chen vào sẽ ngắt kết nối giữa chừng.
+  bool transferSessionActive = false;
+
+  /// Trạng thái máy đọc thật, cất tạm trong lúc xem bản demo.
+  BizDeviceState? _preDemoDeviceState;
+
+  /// Các luồng BLE (đồng bộ, quét Wi-Fi, truyền sách) dùng chung một client
+  /// với `finally { disconnect() }` theo từng thao tác — chạy chồng sẽ ngắt
+  /// kết nối của nhau giữa chừng, nên chặn ngay tại cửa.
+  void _ensureBleIdle() {
+    if (contentSyncing || wifiScanning || transferSessionActive) {
+      throw const BizTransferException(
+        'Đang bận thao tác BLE khác, hãy thử lại sau.',
+      );
+    }
+  }
 
   Future<void> load() async {
     device = await _preferences.load();
     books = await _bookLibrary.load();
     content = await _contentPreferences.load();
+    deviceState = await _preferences.loadDeviceState();
   }
 
   void enterDemoMode() {
@@ -61,6 +84,23 @@ class AppController extends ChangeNotifier {
     device = const DeviceConfig(
       name: 'BizReader Demo',
       host: 'demo.bizreader.local',
+    );
+    // Cất trạng thái thật; bản demo sửa trên bản sao, thoát demo trả lại
+    // nguyên vẹn (không lọt hàng đợi demo vào lần đồng bộ thật).
+    _preDemoDeviceState ??= deviceState;
+    deviceState = const BizDeviceState(
+      settings: {
+        'sleepTimeoutMinutes': 5,
+        'sleepScreen': 3,
+        'uiTheme': 1,
+        'language': 'VI',
+        'fontSize': 1,
+        'lineSpacing': 1,
+        'screenMargin': 20,
+        'refreshFrequency': 2,
+        'sideButtonLayout': 0,
+      },
+      wifiSsids: ['NhaRieng', 'VanPhong'],
     );
     books = LocalBook.demoLibrary();
     content = BizContent(
@@ -102,6 +142,8 @@ class AppController extends ChangeNotifier {
     device = await _preferences.load();
     books = await _bookLibrary.load();
     content = await _contentPreferences.load();
+    deviceState = _preDemoDeviceState ?? await _preferences.loadDeviceState();
+    _preDemoDeviceState = null;
     connectionState = DeviceConnectionState.unknown;
     connectionMessage = null;
     notifyListeners();
@@ -230,6 +272,123 @@ class AppController extends ChangeNotifier {
   Future<void> setSleepMode(BizSleepMode mode) =>
       _saveContent(content.copyWith(sleepMode: mode));
 
+  // --- Cấu hình máy đọc (đồng bộ qua BLE, app quyết định — last edit wins) ---
+
+  Future<void> _saveDeviceState(BizDeviceState next) async {
+    deviceState = next;
+    if (!demoMode) await _preferences.saveDeviceState(next);
+    notifyListeners();
+  }
+
+  /// Sửa một cài đặt của máy đọc; xếp hàng chờ lần đồng bộ tới.
+  /// Sửa về đúng giá trị máy đang có thì bỏ khỏi hàng đợi.
+  Future<void> setDeviceSetting(String key, Object? value) {
+    final pending = Map<String, Object?>.of(deviceState.pendingSettings);
+    if (deviceState.settings.containsKey(key) &&
+        deviceState.settings[key] == value) {
+      pending.remove(key);
+    } else {
+      pending[key] = value;
+    }
+    return _saveDeviceState(deviceState.copyWith(pendingSettings: pending));
+  }
+
+  Future<void> queueWifiAdd(String ssid, String password) {
+    return _saveDeviceState(
+      deviceState.copyWith(
+        pendingWifiAdd: [
+          ...deviceState.pendingWifiAdd.where((c) => c.ssid != ssid),
+          BizWifiCredential(ssid: ssid, password: password),
+        ],
+        // Thêm lại một mạng đang chờ xóa thì hủy lệnh xóa.
+        pendingWifiRemove: deviceState.pendingWifiRemove
+            .where((s) => s != ssid)
+            .toList(),
+        // Thêm lại một mạng từng bị từ chối thì bỏ khỏi danh sách từ chối.
+        failedWifiAdds: deviceState.failedWifiAdds
+            .where((c) => c.ssid != ssid)
+            .toList(),
+      ),
+    );
+  }
+
+  Future<void> cancelWifiAdd(String ssid) => _saveDeviceState(
+    deviceState.copyWith(
+      pendingWifiAdd: deviceState.pendingWifiAdd
+          .where((c) => c.ssid != ssid)
+          .toList(),
+    ),
+  );
+
+  Future<void> queueWifiRemove(String ssid) {
+    return _saveDeviceState(
+      deviceState.copyWith(
+        pendingWifiAdd: deviceState.pendingWifiAdd
+            .where((c) => c.ssid != ssid)
+            .toList(),
+        // Xếp hàng vô điều kiện: lệnh thêm có thể đang trên đường tới máy
+        // (đã push, chưa reconcile) nên không thể chỉ dựa vào wifiSsids.
+        // Xóa SSID máy không biết là no-op với firmware, và reconcile sẽ tự
+        // rút lệnh xóa khi SSID không có trong echo.
+        pendingWifiRemove: [
+          ...deviceState.pendingWifiRemove.where((s) => s != ssid),
+          ssid,
+        ],
+      ),
+    );
+  }
+
+  /// Đưa một mạng bị máy từ chối trở lại hàng đợi thêm ("Thử lại").
+  Future<void> retryWifiAdd(String ssid) {
+    final matches = deviceState.failedWifiAdds.where((c) => c.ssid == ssid);
+    if (matches.isEmpty) return Future.value();
+    return queueWifiAdd(ssid, matches.first.password);
+  }
+
+  /// Bỏ hẳn một mạng bị máy từ chối ("Xoá").
+  Future<void> dismissFailedWifiAdd(String ssid) => _saveDeviceState(
+    deviceState.copyWith(
+      failedWifiAdds: deviceState.failedWifiAdds
+          .where((c) => c.ssid != ssid)
+          .toList(),
+    ),
+  );
+
+  Future<void> cancelWifiRemove(String ssid) => _saveDeviceState(
+    deviceState.copyWith(
+      pendingWifiRemove: deviceState.pendingWifiRemove
+          .where((s) => s != ssid)
+          .toList(),
+    ),
+  );
+
+  /// Nhờ máy đọc quét Wi-Fi xung quanh nó (kết nối BLE theo từng lần gọi,
+  /// như syncContentToDevice). Ném [BizWifiScanUnsupportedException] khi
+  /// firmware cũ không phản hồi — UI quay về nhập thủ công.
+  Future<List<BizWifiScanResult>> scanDeviceWifi() async {
+    if (demoMode) {
+      return const [
+        BizWifiScanResult(ssid: 'NhaRieng', rssi: -48, secured: true),
+        BizWifiScanResult(ssid: 'VanPhong', rssi: -66, secured: true),
+        BizWifiScanResult(ssid: 'CafeSach', rssi: -82, secured: false),
+      ];
+    }
+    if (device.bleId.isEmpty) {
+      throw const BizTransferException(
+        'Hãy chọn BizReader trong mục Thiết bị trước.',
+      );
+    }
+    _ensureBleIdle();
+    wifiScanning = true;
+    notifyListeners();
+    try {
+      return await _bleClient.scanDeviceWifi(deviceId: device.bleId);
+    } finally {
+      wifiScanning = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> setWallpaper(File source) async {
     final decoded = img.decodeImage(await source.readAsBytes());
     if (decoded == null) throw const FormatException('Ảnh không hợp lệ.');
@@ -268,6 +427,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _ensureBleIdle();
     contentSyncing = true;
     contentSyncMessage = 'Đang đồng bộ hai chiều qua BLE';
     notifyListeners();
@@ -277,6 +437,7 @@ class AppController extends ChangeNotifier {
           'Hãy chọn BizReader trong mục Thiết bị trước.',
         );
       }
+      final pushedDevice = deviceState.toPushSection();
       final snapshot = await _bleClient.synchronize(
         deviceId: device.bleId,
         local: BizSyncSnapshot(
@@ -292,15 +453,24 @@ class AppController extends ChangeNotifier {
                 updatedAt: book.updatedAt,
               ),
           ],
+          device: pushedDevice,
         ),
       );
-      content = snapshot.content.copyWith(wallpaperPath: content.wallpaperPath);
+      // `content` may have gained edits while the BLE exchange was in flight;
+      // merge is per-item newest-wins with tombstones (and keeps the local
+      // wallpaperPath, which the device echo never carries), so both the
+      // mid-flight edit and the device's changes survive.
+      content = BizContent.merge(content, snapshot.content);
       final progressByFilename = {
         for (final item in snapshot.progress) item.filename: item,
       };
+      // `books` may have advanced while the BLE exchange was in flight (a page
+      // turned mid-sync is newer than both merge inputs); apply the merged
+      // entry per book only when it is not older than the in-memory one.
       books = [
         for (final book in books)
-          if (progressByFilename[book.remoteFilename] case final progress?)
+          if (progressByFilename[book.remoteFilename] case final progress?
+              when progress.updatedAt >= book.updatedAt)
             book.copyWith(
               progress: progress.percentage,
               chapterNumber: progress.spineIndex + 1,
@@ -313,6 +483,21 @@ class AppController extends ChangeNotifier {
           else
             book,
       ];
+      // Echo sau sync_commit là trạng thái máy sau khi áp dụng: settings echo
+      // thành bản gốc mới, SSID được xác nhận thì rút khỏi hàng đợi. Đối chiếu
+      // trên deviceState hiện tại nên bản sửa trong lúc đồng bộ vẫn giữ nguyên.
+      // Firmware cũ không trả `device` -> giữ nguyên hàng đợi cho lần sau.
+      if (snapshot.device case final echo?) {
+        deviceState = deviceState.reconcile(
+          echo,
+          pushedSettings: pushedDevice?.settings ?? const {},
+          pushedWifiAdds: {
+            for (final credential in pushedDevice?.wifiAdd ?? const [])
+              credential.ssid,
+          },
+        );
+        await _preferences.saveDeviceState(deviceState);
+      }
       await _contentPreferences.save(content);
       await _bookLibrary.save(books);
       contentSyncMessage = content.sleepMode == BizSleepMode.photo
@@ -382,15 +567,24 @@ class AppController extends ChangeNotifier {
     final dot = original.lastIndexOf('.');
     final stem = dot > 0 ? original.substring(0, dot) : original;
     final extension = dot > 0 ? original.substring(dot) : '';
+    // Trim the stem so every candidate stays within the firmware's filename
+    // byte budget; the suffix is ASCII, so trimming the stem never costs the
+    // candidate the uniqueness the suffix provides.
+    String candidateWith(String suffix) {
+      final tail = '-$suffix$extension';
+      final budget =
+          BookLibraryService.maxRemoteFilenameBytes - utf8.encode(tail).length;
+      return '${BookLibraryService.truncateUtf8(stem, budget)}$tail';
+    }
+
     for (final length in const [8, 12, 16, 24, 32, 64]) {
       final suffixLength = length < imported.id.length
           ? length
           : imported.id.length;
-      final candidate =
-          '$stem-${imported.id.substring(0, suffixLength)}$extension';
+      final candidate = candidateWith(imported.id.substring(0, suffixLength));
       if (!used.contains(candidate.toLowerCase())) return candidate;
     }
-    return '$stem-${imported.id}$extension';
+    return candidateWith(imported.id);
   }
 
   Future<void> openDocument(File file) => _fileViewer.open(file);
@@ -538,6 +732,7 @@ class AppController extends ChangeNotifier {
       return device;
     }
 
+    transferSessionActive = true;
     connectionState = DeviceConnectionState.checking;
     connectionMessage = 'Đang mở kết nối truyền sách';
     notifyListeners();
@@ -565,6 +760,7 @@ class AppController extends ChangeNotifier {
     try {
       await _bleClient.stopTransfer();
     } finally {
+      transferSessionActive = false;
       if (device.usesBizTransfer) {
         device = DeviceConfig(
           name: device.name,
@@ -610,8 +806,10 @@ class AppController extends ChangeNotifier {
 
   Future<void> forgetDevice() async {
     await _bleClient.stopTransfer();
+    transferSessionActive = false;
     await _preferences.clear();
     device = const DeviceConfig(name: 'BizReader', host: '');
+    deviceState = const BizDeviceState();
     connectionState = DeviceConnectionState.unknown;
     connectionMessage = null;
     notifyListeners();

@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/biz_transfer_status.dart';
 import '../models/biz_sync_snapshot.dart';
 import '../models/biz_content.dart';
+import '../models/biz_device_section.dart';
 import 'ble_sync_codec.dart';
 
 class BizTransferException implements Exception {
@@ -17,6 +18,15 @@ class BizTransferException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Máy đọc không phản hồi lệnh quét Wi-Fi trong thời hạn: firmware cũ chưa
+/// hỗ trợ `wifi_scan`, hoặc quét quá hạn. UI nên quay về nhập SSID thủ công.
+class BizWifiScanUnsupportedException extends BizTransferException {
+  const BizWifiScanUnsupportedException()
+    : super(
+        'Máy đọc chưa hỗ trợ quét Wi-Fi (firmware cũ) hoặc không phản hồi.',
+      );
 }
 
 class BizTransferBleClient {
@@ -113,7 +123,12 @@ class BizTransferBleClient {
     await ensurePermissions();
     try {
       await _connect(deviceId);
-      final operation = <String, dynamic>{'op': 'start'};
+      // 'now' lets firmware adopt the phone clock (ms since epoch) when its
+      // own clock is unset; older firmware ignores unknown fields.
+      final operation = <String, dynamic>{
+        'op': 'start',
+        'now': DateTime.now().millisecondsSinceEpoch,
+      };
       final requestId = Random.secure().nextInt(0x7fffffff).toRadixString(16);
       operation['request'] = requestId;
       await _ble.writeCharacteristicWithResponse(
@@ -188,12 +203,65 @@ class BizTransferBleClient {
           local.progress,
           remote.progress,
         ),
+        // Cấu hình máy do app quyết định (last edit wins): phủ các key đã sửa
+        // lên settings vừa pull để không ghi đè key lạ hoặc thay đổi
+        // thực hiện trực tiếp trên máy. Null khi không có gì chờ -> bỏ khỏi push.
+        device: BizDeviceSection.mergeForPush(local.device, remote.device),
       );
       return await _pushSnapshot(merged);
     } on BizTransferException {
       rethrow;
     } on Object catch (error) {
       throw BizTransferException('Không đồng bộ được qua BLE: $error');
+    } finally {
+      await disconnect();
+    }
+  }
+
+  /// Yêu cầu máy đọc quét Wi-Fi xung quanh rồi trả danh sách kết quả.
+  ///
+  /// Ghi op `wifi_scan` lên characteristic lệnh, poll status tới khi field
+  /// `scan` xuất hiện (quét xong), rồi pull snapshot bằng đường `sync_pull`
+  /// sẵn có để lấy `device.wifiScan`. Hết [timeout] mà `scan` chưa xuất hiện
+  /// (firmware cũ bỏ qua op lạ) thì ném [BizWifiScanUnsupportedException].
+  Future<List<BizWifiScanResult>> scanDeviceWifi({
+    required String deviceId,
+    Duration timeout = const Duration(seconds: 12),
+    Duration pollInterval = const Duration(seconds: 1),
+  }) async {
+    await ensurePermissions();
+    try {
+      await _connect(deviceId);
+      final requestId = Random.secure().nextInt(0x7fffffff).toRadixString(16);
+      await _ble.writeCharacteristicWithResponse(
+        _commandCharacteristic!,
+        value: utf8.encode(
+          jsonEncode({
+            'op': 'wifi_scan',
+            'request': requestId,
+            'now': DateTime.now().millisecondsSinceEpoch,
+          }),
+        ),
+      );
+      final deadline = DateTime.now().add(timeout);
+      var completed = false;
+      while (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(pollInterval);
+        final status = await _readCurrentStatus();
+        if (status.requestId != requestId) continue;
+        if (status.isError) throw BizTransferException(status.message);
+        if (status.scanCount != null) {
+          completed = true;
+          break;
+        }
+      }
+      if (!completed) throw const BizWifiScanUnsupportedException();
+      final snapshot = await _pullSnapshot();
+      return snapshot.device?.wifiScan ?? const [];
+    } on BizTransferException {
+      rethrow;
+    } on Object catch (error) {
+      throw BizTransferException('Không quét được Wi-Fi qua BLE: $error');
     } finally {
       await disconnect();
     }
@@ -271,10 +339,23 @@ class BizTransferBleClient {
     await _ble.writeCharacteristicWithResponse(
       _commandCharacteristic!,
       value: utf8.encode(
-        jsonEncode({'op': operation, 'request': requestId, ...extra}),
+        jsonEncode({
+          'op': operation,
+          'request': requestId,
+          // Phone clock for firmware progress timestamps; older firmware
+          // ignores unknown fields.
+          'now': DateTime.now().millisecondsSinceEpoch,
+          ...extra,
+        }),
       ),
     );
-    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    // Committing can rewrite up to 100 progress files on a slow SD card, so
+    // sync_commit gets a longer deadline than the quick control commands.
+    final deadline = DateTime.now().add(
+      operation == 'sync_commit'
+          ? const Duration(seconds: 30)
+          : const Duration(seconds: 15),
+    );
     while (DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 120));
       final status = await _readCurrentStatus();

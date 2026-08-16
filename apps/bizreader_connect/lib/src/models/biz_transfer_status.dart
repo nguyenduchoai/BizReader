@@ -13,6 +13,7 @@ class BizTransferStatus {
     this.sha256 = '',
     this.syncChunks = 0,
     this.syncSize = 0,
+    this.scanCount,
   });
 
   factory BizTransferStatus.fromJson(Map<String, dynamic> json) {
@@ -30,6 +31,7 @@ class BizTransferStatus {
       sha256: json['sha256'] as String? ?? '',
       syncChunks: (json['syncChunks'] as num?)?.toInt() ?? 0,
       syncSize: (json['syncSize'] as num?)?.toInt() ?? 0,
+      scanCount: (json['scan'] as num?)?.toInt(),
     );
   }
 
@@ -46,6 +48,10 @@ class BizTransferStatus {
   final String sha256;
   final int syncChunks;
   final int syncSize;
+
+  /// Số mạng quét được sau op `wifi_scan`; null khi chưa quét xong
+  /// (hoặc firmware cũ không hỗ trợ).
+  final int? scanCount;
 
   bool get isReady => state == 'ready' || state == 'complete';
   bool get isError => state == 'error';

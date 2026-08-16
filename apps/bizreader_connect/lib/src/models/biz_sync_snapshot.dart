@@ -1,11 +1,19 @@
 import 'biz_content.dart';
+import 'biz_device_section.dart';
 import 'device_reading_progress.dart';
 
 class BizSyncSnapshot {
-  const BizSyncSnapshot({required this.content, required this.progress});
+  const BizSyncSnapshot({
+    required this.content,
+    required this.progress,
+    this.device,
+  });
 
   final BizContent content;
   final List<DeviceReadingProgress> progress;
+
+  /// Phần cấu hình máy đọc — tùy chọn; firmware cũ bỏ qua key này.
+  final BizDeviceSection? device;
 
   static List<DeviceReadingProgress> _boundedProgress(
     Iterable<DeviceReadingProgress> values,
@@ -63,13 +71,17 @@ class BizSyncSnapshot {
     return _boundedProgress(merged.values);
   }
 
-  Map<String, Object?> toJson() => {
-    'protocol': 2,
-    'content': content.toJson(),
-    'progress': _boundedProgress(
-      progress,
-    ).map((item) => item.toJson()).toList(),
-  };
+  Map<String, Object?> toJson() {
+    final deviceJson = device?.toJson();
+    return {
+      'protocol': 2,
+      'content': content.toJson(),
+      'progress': _boundedProgress(
+        progress,
+      ).map((item) => item.toJson()).toList(),
+      if (deviceJson != null && deviceJson.isNotEmpty) 'device': deviceJson,
+    };
+  }
 
   factory BizSyncSnapshot.fromJson(Map<String, Object?> json) {
     if ((json['protocol'] as num?)?.toInt() != 2) {
@@ -80,6 +92,7 @@ class BizSyncSnapshot {
     if (content is! Map || progress is! List) {
       throw const FormatException('Snapshot BizReader không hợp lệ');
     }
+    final device = json['device'];
     return BizSyncSnapshot(
       content: BizContent.fromJson(content.cast<String, Object?>()),
       progress: _boundedProgress(
@@ -88,6 +101,9 @@ class BizSyncSnapshot {
               DeviceReadingProgress.fromJson(item.cast<String, Object?>()),
         ),
       ),
+      device: device is Map
+          ? BizDeviceSection.fromJson(device.cast<String, Object?>())
+          : null,
     );
   }
 }

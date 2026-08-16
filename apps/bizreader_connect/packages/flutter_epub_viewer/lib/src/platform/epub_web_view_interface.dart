@@ -68,6 +68,7 @@ class EpubPlatformViewConfig {
     this.backgroundDecoration,
     this.contextMenu,
     this.onDisplayError,
+    this.onRendererCrashed,
     this.suppressNativeContextMenu = false,
     this.disableVerticalScroll = false,
   });
@@ -87,6 +88,16 @@ class EpubPlatformViewConfig {
 
   /// Reports a renderer or host-page failure to the embedding application.
   final ValueChanged<String>? onDisplayError;
+
+  /// Invoked when the underlying WebView renderer process dies (Android) or
+  /// the web content process is terminated by the OS (iOS/macOS).
+  ///
+  /// The WebView is unusable afterwards; the embedder must dispose and
+  /// recreate the platform view. The native crash handlers are registered
+  /// only when this callback is provided; on Android that registration is
+  /// what suppresses the platform default of killing the whole app process
+  /// (API 26+), so callback-less embedders keep the default behavior.
+  final VoidCallback? onRendererCrashed;
 
   /// Suppress the native context menu entirely (mobile only).
   final bool suppressNativeContextMenu;
