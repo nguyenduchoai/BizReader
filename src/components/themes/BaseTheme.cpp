@@ -691,6 +691,19 @@ void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
   }
 }
 
+int BaseTheme::getButtonMenuItemAt(const Rect rect, const int buttonCount, const int x, const int y) const {
+  // Hit zones mirror drawButtonMenu's row geometry exactly; taps in the
+  // menuSpacing gaps intentionally miss.
+  const int tileX = rect.x + BaseMetrics::values.contentSidePadding;
+  const int tileWidth = rect.width - BaseMetrics::values.contentSidePadding * 2;
+  for (int i = 0; i < buttonCount; ++i) {
+    const int tileY = BaseMetrics::values.verticalSpacing + rect.y +
+                      i * (BaseMetrics::values.menuRowHeight + BaseMetrics::values.menuSpacing);
+    if (x >= tileX && x < tileX + tileWidth && y >= tileY && y < tileY + BaseMetrics::values.menuRowHeight) return i;
+  }
+  return -1;
+}
+
 Rect BaseTheme::drawPopup(const GfxRenderer& renderer, const char* message) const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int marginX = metrics.popupMarginX;

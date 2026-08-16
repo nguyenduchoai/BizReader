@@ -95,6 +95,7 @@ class RoundedRaffTheme : public BaseTheme {
   void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                       const std::function<std::string(int index)>& buttonLabel,
                       const std::function<UIIcon(int index)>& rowIcon) const override;
+  int getButtonMenuItemAt(Rect rect, int buttonCount, int x, int y) const override;
   void drawTextField(const GfxRenderer& renderer, Rect rect, int textWidth, bool cursorMode = false,
                      int contentStartX = 0, int contentWidth = 0) const override;
   void drawKeyboardKey(const GfxRenderer& renderer, Rect rect, const char* label, bool isSelected,
@@ -109,4 +110,16 @@ class RoundedRaffTheme : public BaseTheme {
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
   bool homeMenuShowsContinueReading() const { return true; }
+
+ private:
+  // Last-drawn button-menu geometry for getButtonMenuItemAt: the row height
+  // comes from renderer font metrics and the page start from the selected
+  // index, neither of which the hit-test signature receives. A tap can only
+  // target a menu that has already been drawn. Written by drawButtonMenu on
+  // the render task, read on the main task; aligned int stores are single
+  // instructions on ESP32-C3, so no lock is needed.
+  // ponytail: cache from last draw — pass renderer+selectedIndex through the
+  // virtual instead if a menu ever needs hit-testing before its first draw.
+  mutable int menuHitRowHeight = 0;
+  mutable int menuHitPageStart = 0;
 };

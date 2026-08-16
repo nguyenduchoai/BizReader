@@ -206,6 +206,9 @@ void RoundedRaffTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int butt
   const int menuTop = rect.y;
   const int textLineHeight = renderer.getLineHeight(kTitleFontId);
   const int menuMaxWidth = std::max(0, rect.width - sidePadding * 2);
+  // Capture the geometry the touch hit test cannot recompute (see header).
+  menuHitRowHeight = rowHeight;
+  menuHitPageStart = pageStartIndex;
 
   for (int i = pageStartIndex; i < buttonCount && i < pageStartIndex + pageItems; ++i) {
     const std::string label = buttonLabel(i);
@@ -228,6 +231,23 @@ void RoundedRaffTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int butt
   }
 
   drawScrollBar(renderer, rect, buttonCount, pageStartIndex, pageItems);
+}
+
+int RoundedRaffTheme::getButtonMenuItemAt(const Rect rect, const int buttonCount, const int x, const int y) const {
+  if (menuHitRowHeight <= 0) return -1;  // menu not drawn yet
+  const int rowStep = menuHitRowHeight + kSelectableRowGap;
+  const int pageItems = std::max(1, rect.height / rowStep);  // same paging formula as drawButtonMenu
+  const int sidePadding = RoundedRaffMetrics::values.contentSidePadding;
+  const int rowX = rect.x + sidePadding;
+  const int bandWidth = std::max(0, rect.width - sidePadding * 2);
+  // Vertical zones mirror drawButtonMenu's rows; horizontally the full padded
+  // band is accepted — the drawn pill is only as wide as its label, so the
+  // band is a strict superset and rows never overlap.
+  for (int i = menuHitPageStart; i < buttonCount && i < menuHitPageStart + pageItems; ++i) {
+    const int rowY = rect.y + (i - menuHitPageStart) * rowStep;
+    if (x >= rowX && x < rowX + bandWidth && y >= rowY && y < rowY + menuHitRowHeight) return i;
+  }
+  return -1;
 }
 
 void RoundedRaffTheme::drawTextField(const GfxRenderer& renderer, Rect rect, const int textWidth, bool cursorMode,

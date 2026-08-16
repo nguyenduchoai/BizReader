@@ -542,3 +542,17 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     renderer.drawText(UI_12_FONT_ID, textX, textY, label, true);
   }
 }
+
+int LyraTheme::getButtonMenuItemAt(const Rect rect, const int buttonCount, const int x, const int y) const {
+  // Hit zones mirror drawButtonMenu's tile geometry exactly: rows start at
+  // rect.y with no leading offset (unlike BaseTheme's verticalSpacing).
+  // Lyra3CoversTheme inherits both methods; its metrics share Lyra's menu
+  // values, so this hit test stays correct there.
+  const int tileX = rect.x + LyraMetrics::values.contentSidePadding;
+  const int tileWidth = rect.width - LyraMetrics::values.contentSidePadding * 2;
+  for (int i = 0; i < buttonCount; ++i) {
+    const int tileY = rect.y + i * (LyraMetrics::values.menuRowHeight + LyraMetrics::values.menuSpacing);
+    if (x >= tileX && x < tileX + tileWidth && y >= tileY && y < tileY + LyraMetrics::values.menuRowHeight) return i;
+  }
+  return -1;
+}

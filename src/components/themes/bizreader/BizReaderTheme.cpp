@@ -55,8 +55,8 @@ void BizReaderTheme::drawHeader(const GfxRenderer& renderer, const Rect rect, co
 
   const bool showBatteryPercentage =
       SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS;
-  const int batteryX = rect.x + rect.width - BizReaderMetrics::values.contentSidePadding -
-                       BizReaderMetrics::values.batteryWidth;
+  const int batteryX =
+      rect.x + rect.width - BizReaderMetrics::values.contentSidePadding - BizReaderMetrics::values.batteryWidth;
   drawBatteryRight(
       renderer,
       Rect{batteryX, rect.y + 6, BizReaderMetrics::values.batteryWidth, BizReaderMetrics::values.batteryHeight},
@@ -79,21 +79,18 @@ void BizReaderTheme::drawHeader(const GfxRenderer& renderer, const Rect rect, co
   }
 
   if (subtitle != nullptr && subtitle[0] != '\0' && rect.height >= BizReaderMetrics::values.headerHeight) {
-    const auto renderedSubtitle = renderer.truncatedText(
-        SMALL_FONT_ID, subtitle, rect.width - BizReaderMetrics::values.contentSidePadding * 2);
+    const auto renderedSubtitle =
+        renderer.truncatedText(SMALL_FONT_ID, subtitle, rect.width - BizReaderMetrics::values.contentSidePadding * 2);
     const int subtitleWidth = renderer.getTextWidth(SMALL_FONT_ID, renderedSubtitle.c_str());
-    renderer.drawText(SMALL_FONT_ID, rect.x + (rect.width - subtitleWidth) / 2, rect.y + 56,
-                      renderedSubtitle.c_str());
+    renderer.drawText(SMALL_FONT_ID, rect.x + (rect.width - subtitleWidth) / 2, rect.y + 56, renderedSubtitle.c_str());
   }
 
   renderer.drawLine(rect.x + BizReaderMetrics::values.contentSidePadding, rect.y + rect.height - 2,
-                    rect.x + rect.width - BizReaderMetrics::values.contentSidePadding, rect.y + rect.height - 2,
-                    true);
+                    rect.x + rect.width - BizReaderMetrics::values.contentSidePadding, rect.y + rect.height - 2, true);
 }
 
 void BizReaderTheme::drawButtonMenu(GfxRenderer& renderer, const Rect rect, const int buttonCount,
-                                    const int selectedIndex,
-                                    const std::function<std::string(int index)>& buttonLabel,
+                                    const int selectedIndex, const std::function<std::string(int index)>& buttonLabel,
                                     const std::function<UIIcon(int index)>& rowIcon) const {
   const int sidePadding = BizReaderMetrics::values.contentSidePadding;
   const int tileWidth = (rect.width - sidePadding * 2 - kMenuGap) / kMenuColumns;
@@ -101,8 +98,8 @@ void BizReaderTheme::drawButtonMenu(GfxRenderer& renderer, const Rect rect, cons
   for (int i = 0; i < buttonCount; ++i) {
     const int column = i % kMenuColumns;
     const int row = i / kMenuColumns;
-    const Rect tile{rect.x + sidePadding + column * (tileWidth + kMenuGap),
-                    rect.y + row * (kTileHeight + kMenuGap), tileWidth, kTileHeight};
+    const Rect tile{rect.x + sidePadding + column * (tileWidth + kMenuGap), rect.y + row * (kTileHeight + kMenuGap),
+                    tileWidth, kTileHeight};
     const bool selected = selectedIndex == i;
 
     renderer.fillRoundedRect(tile.x, tile.y, tile.width, tile.height, kCornerRadius,
@@ -119,8 +116,8 @@ void BizReaderTheme::drawButtonMenu(GfxRenderer& renderer, const Rect rect, cons
                                               selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
     const auto labelStyle = selected ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
     const int labelWidth = renderer.getTextWidth(UI_10_FONT_ID, label.c_str(), labelStyle);
-    renderer.drawText(UI_10_FONT_ID, tile.x + std::max(8, (tile.width - labelWidth) / 2), tile.y + 58,
-                      label.c_str(), true, labelStyle);
+    renderer.drawText(UI_10_FONT_ID, tile.x + std::max(8, (tile.width - labelWidth) / 2), tile.y + 58, label.c_str(),
+                      true, labelStyle);
   }
 }
 
@@ -130,8 +127,8 @@ int BizReaderTheme::getButtonMenuItemAt(const Rect rect, const int buttonCount, 
   for (int i = 0; i < buttonCount; ++i) {
     const int column = i % kMenuColumns;
     const int row = i / kMenuColumns;
-    const Rect tile{rect.x + sidePadding + column * (tileWidth + kMenuGap),
-                    rect.y + row * (kTileHeight + kMenuGap), tileWidth, kTileHeight};
+    const Rect tile{rect.x + sidePadding + column * (tileWidth + kMenuGap), rect.y + row * (kTileHeight + kMenuGap),
+                    tileWidth, kTileHeight};
     if (x >= tile.x && x < tile.x + tile.width && y >= tile.y && y < tile.y + tile.height) return i;
   }
   return -1;

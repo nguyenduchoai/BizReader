@@ -250,8 +250,13 @@ bool MappedInputManager::routeTouchHintTap(const float panelX, const float panel
   // landscape touch frame into that portrait frame before hit-testing.
   const float portraitX = 1.0f - panelY;
   const float portraitY = panelX;
-  constexpr float kTouchFooterTop = 0.90f;
-  if (portraitY < kTouchFooterTop) {
+  // Claim only the strip the hints actually occupy (buttonHintsHeight at the
+  // bottom, drawn in portrait) plus a small slop. A fixed 10% band would swallow
+  // the last row of the bottom-aligned on-screen keyboard (space/done keys).
+  const float portraitHeight = static_cast<float>(std::max(renderer.getScreenWidth(), renderer.getScreenHeight()));
+  const float footerTop =
+      1.0f - static_cast<float>(UITheme::getInstance().getMetrics().buttonHintsHeight + 8) / portraitHeight;
+  if (portraitY < footerTop) {
     return false;
   }
 

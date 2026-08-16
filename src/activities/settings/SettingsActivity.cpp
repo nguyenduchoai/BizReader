@@ -94,9 +94,10 @@ void SettingsActivity::rebuildSettingsLists() {
 void SettingsActivity::onEnter() {
   Activity::onEnter();
 
-  // Reset selection to first category
+  // Reset to the top-level category menu
   selectedCategoryIndex = 0;
   selectedSettingIndex = 0;
+  inCategory = false;
   preserveQuickResumeTimeoutOn =
       SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT;
   quickResumeTimeoutAutoEnabled = false;
@@ -120,36 +121,49 @@ void SettingsActivity::loop() {
   float touchX = 0.0f, touchY = 0.0f;
   if (mappedInput.getTouchTap(touchX, touchY)) {
     const auto& metrics = UITheme::getInstance().getMetrics();
-    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
-    const int contentHeight =
-        renderer.getScreenHeight() - (metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight +
-                                      metrics.buttonHintsHeight + metrics.verticalSpacing * 2);
-    const int touched = mappedInput.touchListIndex(Rect{0, contentTop, renderer.getScreenWidth(), contentHeight},
-                                                   settingsCount, selectedSettingIndex - 1, false);
-    if (touched >= 0) {
-      selectedSettingIndex = touched + 1;
-    } else {
+    const int pageWidth = renderer.getScreenWidth();
+    const int pageHeight = renderer.getScreenHeight();
+    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+    if (!inCategory) {
+      // getTouchTap returns normalized 0..1 coordinates
+      const int pixelX = static_cast<int>(touchX * pageWidth);
+      const int pixelY = static_cast<int>(touchY * pageHeight);
+      const int tapped =
+          GUI.getButtonMenuItemAt(Rect{0, contentTop, pageWidth, pageHeight - contentTop - metrics.buttonHintsHeight},
+                                  categoryCount, pixelX, pixelY);
       mappedInput.cancelTouchConfirm();
+      if (tapped >= 0) {
+        enterCategory(tapped);
+        return;
+      }
+    } else {
+      const int contentHeight = pageHeight - (metrics.topPadding + metrics.headerHeight + metrics.buttonHintsHeight +
+                                              metrics.verticalSpacing * 2);
+      const int touched = mappedInput.touchListIndex(Rect{0, contentTop, pageWidth, contentHeight}, settingsCount,
+                                                     selectedSettingIndex - 1, false);
+      if (touched >= 0) {
+        selectedSettingIndex = touched + 1;
+      } else {
+        mappedInput.cancelTouchConfirm();
+      }
     }
   }
-
-  bool hasChangedCategory = false;
 
   // Handle actions with early return
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    if (selectedSettingIndex == 0) {
-      selectedCategoryIndex = (selectedCategoryIndex < categoryCount - 1) ? (selectedCategoryIndex + 1) : 0;
-      hasChangedCategory = true;
-      requestUpdate();
+    if (!inCategory) {
+      enterCategory(selectedCategoryIndex);
     } else {
       toggleCurrentSetting();
       requestUpdate();
-      return;
     }
+    return;
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    if (selectedSettingIndex > 0) {
+    if (inCategory) {
+      // Back to the category menu; each toggle already saved to file
+      inCategory = false;
       selectedSettingIndex = 0;
       requestUpdate();
     } else {
@@ -159,47 +173,42 @@ void SettingsActivity::loop() {
     return;
   }
 
-  // Handle navigation
-  buttonNavigator.onNextRelease([this] {
-    selectedSettingIndex = ButtonNavigator::nextIndex(selectedSettingIndex, settingsCount + 1);
-    requestUpdate();
-  });
-
-  buttonNavigator.onPreviousRelease([this] {
-    selectedSettingIndex = ButtonNavigator::previousIndex(selectedSettingIndex, settingsCount + 1);
-    requestUpdate();
-  });
-
-  buttonNavigator.onNextContinuous([this, &hasChangedCategory] {
-    hasChangedCategory = true;
-    selectedCategoryIndex = ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount);
-    requestUpdate();
-  });
-
-  buttonNavigator.onPreviousContinuous([this, &hasChangedCategory] {
-    hasChangedCategory = true;
-    selectedCategoryIndex = ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount);
-    requestUpdate();
-  });
-
-  if (hasChangedCategory) {
-    selectedSettingIndex = (selectedSettingIndex == 0) ? 0 : 1;
-    switch (selectedCategoryIndex) {
-      case 0:
-        currentSettings = &displaySettings;
-        break;
-      case 1:
-        currentSettings = &readerSettings;
-        break;
-      case 2:
-        currentSettings = &controlsSettings;
-        break;
-      case 3:
-        currentSettings = &systemSettings;
-        break;
-    }
-    settingsCount = static_cast<int>(currentSettings->size());
+  // Handle navigation: cycle category buttons at top level, list rows inside a category
+  if (!inCategory) {
+    const auto nextCategory = [this] {
+      selectedCategoryIndex = ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount);
+      requestUpdate();
+    };
+    const auto previousCategory = [this] {
+      selectedCategoryIndex = ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount);
+      requestUpdate();
+    };
+    buttonNavigator.onNextRelease(nextCategory);
+    buttonNavigator.onPreviousRelease(previousCategory);
+    buttonNavigator.onNextContinuous(nextCategory);
+    buttonNavigator.onPreviousContinuous(previousCategory);
+  } else {
+    const auto nextSetting = [this] {
+      selectedSettingIndex = ButtonNavigator::nextIndex(selectedSettingIndex - 1, settingsCount) + 1;
+      requestUpdate();
+    };
+    const auto previousSetting = [this] {
+      selectedSettingIndex = ButtonNavigator::previousIndex(selectedSettingIndex - 1, settingsCount) + 1;
+      requestUpdate();
+    };
+    buttonNavigator.onNextRelease(nextSetting);
+    buttonNavigator.onPreviousRelease(previousSetting);
+    buttonNavigator.onNextContinuous(nextSetting);
+    buttonNavigator.onPreviousContinuous(previousSetting);
   }
+}
+
+void SettingsActivity::enterCategory(const int categoryIndex) {
+  selectedCategoryIndex = categoryIndex;
+  rebuildSettingsLists();  // Updates currentSettings + settingsCount for the category
+  selectedSettingIndex = 1;
+  inCategory = true;
+  requestUpdate();
 }
 
 void SettingsActivity::toggleCurrentSetting() {
@@ -380,23 +389,34 @@ void SettingsActivity::render(RenderLock&&) {
 
   const auto& metrics = UITheme::getInstance().getMetrics();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SETTINGS_TITLE),
-                 CROSSPOINT_VERSION);
+  // No version subtitle here: the dev version string is long enough to collide
+  // with the centered title; it lives in Device Info (and the boot screen).
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
+                 inCategory ? I18N.get(categoryNames[selectedCategoryIndex]) : tr(STR_SETTINGS_TITLE));
 
-  std::vector<TabInfo> tabs;
-  tabs.reserve(categoryCount);
-  for (int i = 0; i < categoryCount; i++) {
-    tabs.push_back({I18N.get(categoryNames[i]), selectedCategoryIndex == i});
+  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+
+  if (!inCategory) {
+    // Top level: one big button per category
+    static constexpr UIIcon categoryIcons[categoryCount] = {UIIcon::Recent, UIIcon::Book, UIIcon::Settings,
+                                                            UIIcon::Wifi};
+    GUI.drawButtonMenu(
+        renderer, Rect{0, contentTop, pageWidth, pageHeight - contentTop - metrics.buttonHintsHeight}, categoryCount,
+        selectedCategoryIndex, [this](const int i) { return std::string(I18N.get(categoryNames[i])); },
+        [](const int i) { return categoryIcons[i]; });
+
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.displayBuffer();
+    return;
   }
-  GUI.drawTabBar(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight}, tabs,
-                 selectedSettingIndex == 0);
 
   const auto& settings = *currentSettings;
   GUI.drawList(
       renderer,
-      Rect{0, metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing, pageWidth,
-           pageHeight - (metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.buttonHintsHeight +
-                         metrics.verticalSpacing * 2)},
+      Rect{0, contentTop, pageWidth,
+           pageHeight -
+               (metrics.topPadding + metrics.headerHeight + metrics.buttonHintsHeight + metrics.verticalSpacing * 2)},
       settingsCount, selectedSettingIndex - 1,
       [&settings](int index) { return std::string(I18N.get(settings[index].nameId)); }, nullptr, nullptr,
       [&settings](int i) {
@@ -435,11 +455,9 @@ void SettingsActivity::render(RenderLock&&) {
 
   // Draw help text
   const auto confirmLabel =
-      (selectedSettingIndex == 0)
-          ? I18N.get(categoryNames[(selectedCategoryIndex + 1) % categoryCount])
-          : (selectedSettingIndex > 0 && (*currentSettings)[selectedSettingIndex - 1].nameId == StrId::STR_TIME_TO_SLEEP
-                 ? tr(STR_SELECT)
-                 : tr(STR_TOGGLE));
+      (selectedSettingIndex > 0 && (*currentSettings)[selectedSettingIndex - 1].nameId == StrId::STR_TIME_TO_SLEEP)
+          ? tr(STR_SELECT)
+          : tr(STR_TOGGLE);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

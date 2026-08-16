@@ -160,6 +160,8 @@ class SettingsActivity final : public Activity {
 
   bool preserveQuickResumeTimeoutOn = false;
   bool quickResumeTimeoutAutoEnabled = false;
+  // false: top-level category menu (4 big buttons); true: inside a category's settings list
+  bool inCategory = false;
 
   OptionPopup optionPopup;
 
