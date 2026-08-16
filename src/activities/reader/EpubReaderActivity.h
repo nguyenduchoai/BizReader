@@ -10,6 +10,7 @@
 #include "BookmarkEntry.h"
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
+#include "ReaderUtils.h"
 #include "activities/Activity.h"
 
 class EpubReaderActivity final : public Activity {
@@ -49,6 +50,17 @@ class EpubReaderActivity final : public Activity {
   bool pendingReadFolderMove = false;
   std::atomic<bool> pageTurnRenderPending{false};
   int8_t queuedPageTurn = 0;
+  // Set at the end of onEnter() once the saved position has been loaded. render()
+  // no-ops until then, so a stale render-task notification surviving the activity
+  // swap cannot render (and save progress for) spine 0 / page 0 mid-initialization.
+  std::atomic<bool> positionLoaded{false};
+
+  // Debounced progress.bin persistence (SPIFFS/SD write throttling): adjacent page
+  // turns only hit the filesystem every SAVE_INTERVAL-th change, while any jump
+  // (chapter change, |delta page| > 1) writes immediately; onExit() and the explicit
+  // saveProgress() paths (KOReader sync, cache delete, footnote origin) flush the rest.
+  // Bound: a battery pull can lose at most SAVE_INTERVAL - 1 (= 4) adjacent page turns.
+  ReaderUtils::ProgressDebouncer progressDeb;
 
   BizReadingProgress pendingBizProgress;
   bool bizProgressDirty = false;
@@ -70,6 +82,12 @@ class EpubReaderActivity final : public Activity {
   void renderStatusBar() const;
   void silentIndexNextChapterIfNeeded(uint16_t viewportWidth, uint16_t viewportHeight);
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
+  // Debounced variant used by render(): adjacent turns write every SAVE_INTERVAL-th
+  // change, jumps write immediately. The Biz mirror still updates on every change.
+  void noteProgress(int spineIndex, int currentPage, int pageCount);
+  // Writes any position noted but not yet persisted to progress.bin.
+  void flushProgress();
+  void updateBizProgress(int spineIndex, int currentPage, int pageCount);
   bool flushBizProgress();
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
   void jumpToPercent(int percent);

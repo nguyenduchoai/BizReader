@@ -2,9 +2,11 @@
 
 #include <Txt.h>
 
+#include <atomic>
 #include <vector>
 
 #include "CrossPointSettings.h"
+#include "ReaderUtils.h"
 #include "activities/Activity.h"
 
 class TxtReaderActivity final : public Activity {
@@ -13,6 +15,12 @@ class TxtReaderActivity final : public Activity {
   int currentPage = 0;
   int totalPages = 1;
   int pagesUntilFullRefresh = 0;
+  // Debounced progress.bin persistence; see ReaderUtils::ProgressDebouncer.
+  ReaderUtils::ProgressDebouncer progressDeb;
+  // Set at the end of onEnter(). render() no-ops until then, so a stale render-task
+  // notification surviving the activity swap cannot index/render with the previous
+  // activity's orientation or save progress mid-initialization.
+  std::atomic<bool> ready{false};
 
   // Streaming text reader - stores file offsets for each page
   std::vector<size_t> pageOffsets;  // File offset for start of each page
@@ -38,7 +46,7 @@ class TxtReaderActivity final : public Activity {
   void buildPageIndex();
   bool loadPageIndexCache();
   void savePageIndexCache() const;
-  void saveProgress() const;
+  bool saveProgress() const;
   void loadProgress();
 
  public:

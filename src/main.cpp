@@ -490,6 +490,15 @@ void setup() {
 void loop() {
   static unsigned long maxLoopDuration = 0;
   const unsigned long loopStartTime = millis();
+
+  // A previous iteration that took >5s means user-initiated blocking work (download,
+  // OTA/SD flash, TLS sync, cache wipe) froze the loop, so the blocked time must not
+  // count as inactivity and instantly deep-sleep over the result/error screen. This
+  // covers all current and future blocking sites (replaces per-site pokes); normal
+  // iterations, including an e-ink full refresh, stay well under the 5s threshold.
+  static unsigned long lastLoopStart = 0;
+  const bool loopStalled = lastLoopStart != 0 && loopStartTime - lastLoopStart > 5000;
+  lastLoopStart = loopStartTime;
 #ifdef ENABLE_SERIAL_TRANSPORT
   static unsigned long lastMemPrint = 0;
 #endif
@@ -539,7 +548,7 @@ void loop() {
   // auto-sleep mid-use.
   static unsigned long lastActivityTime = millis();
   if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity() ||
-      activityManager.preventAutoSleep() || BIZ_TRANSFER.isBusy()) {
+      activityManager.preventAutoSleep() || BIZ_TRANSFER.isBusy() || loopStalled) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }

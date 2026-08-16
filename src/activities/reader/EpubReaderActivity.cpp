@@ -226,6 +226,13 @@ void EpubReaderActivity::onEnter() {
 
   loadCachedBookmarks();
 
+  // Seed the progress-debounce baseline with the position just loaded, so opening
+  // and closing a book without turning a page writes nothing (value-change check).
+  progressDeb.seed(currentSpineIndex, nextPageNumber, cachedChapterTotalPageCount);
+
+  // Position state is fully initialized; render() may now run (and save progress).
+  positionLoaded.store(true, std::memory_order_release);
+
   // Trigger first update
   requestUpdate();
 }
@@ -246,6 +253,10 @@ void EpubReaderActivity::onExit() {
   if (footnoteDepth > 0 && epub) {
     const SavedPosition& origin = savedPositions[0];
     saveProgress(origin.spineIndex, origin.pageNumber, 0);
+  } else if (epub) {
+    // Persist any position changes the render-path debounce has not written yet.
+    // The deep-sleep path (goToSleep -> exitActivity) also lands here.
+    flushProgress();
   }
   flushBizProgress();
 
@@ -664,13 +675,19 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::DISPLAY_QR: {
-      if (section && section->currentPage >= 0 && section->currentPage < section->pageCount) {
-        std::string fullText = section->getTextFromSectionFile();
-        if (!fullText.empty()) {
-          startActivityForResult(std::make_unique<QrDisplayActivity>(renderer, mappedInput, fullText),
-                                 [this](const ActivityResult& result) {});
-          break;
+      std::string fullText;
+      {
+        // Lock across check + read: a concurrent render's corrupt-cache path can
+        // section.reset() between an unlocked null-check and the section-file read.
+        RenderLock lock(*this);
+        if (section && section->currentPage >= 0 && section->currentPage < section->pageCount) {
+          fullText = section->getTextFromSectionFile();
         }
+      }
+      if (!fullText.empty()) {
+        startActivityForResult(std::make_unique<QrDisplayActivity>(renderer, mappedInput, fullText),
+                               [this](const ActivityResult& result) {});
+        break;
       }
       // If no text or page loading failed, just close menu
       requestUpdate();
@@ -872,6 +889,13 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     return;
   }
 
+  // A stale render-task notification can fire between the activity swap and the end
+  // of onEnter(); rendering then would build/save spine 0 page 0 instead of the real
+  // position. onEnter() ends with requestUpdate(), so a legitimate render follows.
+  if (!positionLoaded.load(std::memory_order_acquire)) {
+    return;
+  }
+
   const auto showPendingSyncSaveError = [this]() {
     if (!pendingSyncSaveError) return;
     pendingSyncSaveError = false;
@@ -923,7 +947,13 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (!section) {
     const auto filepath = epub->getSpineItem(currentSpineIndex).href;
     LOG_DBG("ERS", "Loading file: %s, index: %d", filepath.c_str(), currentSpineIndex);
-    section = std::unique_ptr<Section>(new Section(epub, currentSpineIndex, renderer));
+    section = makeUniqueNoThrow<Section>(epub, currentSpineIndex, renderer);
+    if (!section) {
+      LOG_ERR("ERS", "OOM: Section for spine %d", currentSpineIndex);
+      queuedPageTurn = 0;  // don't let a queued turn fire as a surprise flip later
+      showPendingSyncSaveError();
+      return;
+    }
 
     if (!section->loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                   SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth,
@@ -941,6 +971,9 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                                       SETTINGS.imageRendering, SETTINGS.focusReadingEnabled, popupFn)) {
         LOG_ERR("ERS", "Failed to persist page data to SD");
         section.reset();
+        // Drop any queued page turn: with section null it would otherwise fire as a
+        // surprise flip whenever a section later loads.
+        queuedPageTurn = 0;
         showPendingSyncSaveError();
         return;
       }
@@ -1042,7 +1075,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     LOG_DBG("ERS", "Rendered page in %dms", millis() - start);
   }
   silentIndexNextChapterIfNeeded(viewportWidth, viewportHeight);
-  saveProgress(currentSpineIndex, section->currentPage, section->pageCount);
+  noteProgress(currentSpineIndex, section->currentPage, section->pageCount);
 
   showPendingSyncSaveError();
 
@@ -1091,6 +1124,36 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
 bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageCount) {
   if (!EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount)) return false;
 
+  progressDeb.seed(spineIndex, currentPage, pageCount);  // written position is the new baseline
+  updateBizProgress(spineIndex, currentPage, pageCount);
+  return true;
+}
+
+// Debounced progress persistence for the render path: writing progress.bin on every
+// page render wears SPIFFS/SD sectors. Adjacent page turns only hit the filesystem
+// every SAVE_INTERVAL-th change; any jump writes immediately so a crash or battery
+// pull never loses it. flushProgress() (onExit) persists the remainder.
+// Bound: a battery pull can lose at most SAVE_INTERVAL - 1 (= 4) adjacent page turns.
+void EpubReaderActivity::noteProgress(int spineIndex, int currentPage, int pageCount) {
+  if (spineIndex == progressDeb.spine && currentPage == progressDeb.page && pageCount == progressDeb.pageCount) {
+    return;  // value-change check: re-renders of the same page write nothing
+  }
+  updateBizProgress(spineIndex, currentPage, pageCount);  // Biz mirror keeps per-change granularity
+  if (progressDeb.note(spineIndex, currentPage, pageCount)) {
+    if (EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount)) {
+      progressDeb.saved();
+    }
+  }
+}
+
+void EpubReaderActivity::flushProgress() {
+  if (!progressDeb.dirty()) return;
+  if (EpubReaderUtils::saveProgress(*epub, progressDeb.spine, progressDeb.page, progressDeb.pageCount)) {
+    progressDeb.saved();
+  }
+}
+
+void EpubReaderActivity::updateBizProgress(int spineIndex, int currentPage, int pageCount) {
   const float chapterProgress =
       pageCount > 1 ? static_cast<float>(currentPage) / static_cast<float>(pageCount - 1) : 0.0f;
   pendingBizProgress.filename = BizReadingProgressStore::filenameFromPath(epub->getPath());
@@ -1105,7 +1168,6 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   if (millis() - lastBizProgressFlushTime >= BIZ_PROGRESS_FLUSH_INTERVAL_MS) {
     flushBizProgress();
   }
-  return true;
 }
 
 bool EpubReaderActivity::flushBizProgress() {
@@ -1435,17 +1497,17 @@ void EpubReaderActivity::loadCachedBookmarks() {
 }
 
 void EpubReaderActivity::addBookmark() {
+  // Hold the RenderLock from the null-check through the section-file read below: a
+  // concurrent render that hits the corrupt-cache path can section.reset() between
+  // an unlocked check and use (TOCTOU null-deref). getCurrentPosition() and
+  // getTextFromSectionFile() both dereference section.
+  RenderLock lock(*this);
   if (!section || !epub) {
     return;
   }
-  LOG_DBG("ERS", "Toggle bookmark at spine %d, page %d", currentSpineIndex, section ? section->currentPage : -1);
-  int currentPage;
-  int pageCount;
-  {
-    RenderLock lock(*this);
-    pageCount = section->pageCount;
-    currentPage = section->currentPage;
-  }
+  LOG_DBG("ERS", "Toggle bookmark at spine %d, page %d", currentSpineIndex, section->currentPage);
+  const int pageCount = section->pageCount;
+  const int currentPage = section->currentPage;
 
   SavedProgressPosition progress = ProgressMapper::toSavedProgress(epub, getCurrentPosition());
   const ProgressRange pageRange = getPageProgressRange(epub, currentSpineIndex, currentPage, pageCount);
@@ -1476,6 +1538,7 @@ void EpubReaderActivity::addBookmark() {
     bookmarkRemoved = false;
     currentPageBookmarked = true;
   }
+  lock.unlock();  // the bookmark JSON write below no longer touches section
 
   const std::string path = BookmarkUtil::getBookmarkPath(epub->getPath());
   const std::string bookmarksDir = BookmarkUtil::getBookmarksDir();

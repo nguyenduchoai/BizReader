@@ -44,6 +44,10 @@ class ActivityManager {
 
   void exitActivity(const RenderLock& lock);
 
+  // Drop render-task notifications accumulated for the outgoing activity during a
+  // swap (pop/push/replace). Must be called while the RenderLock is held.
+  void clearStaleRenderNotifications();
+
   // Pending activity to be launched on next loop iteration
   std::unique_ptr<Activity> pendingActivity;
   enum class PendingAction { None, Push, Pop, Replace };

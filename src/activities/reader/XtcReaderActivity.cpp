@@ -36,10 +36,17 @@ void XtcReaderActivity::onEnter() {
   // Load saved progress
   loadProgress();
 
+  // Seed the progress-debounce baseline with the position just loaded, so opening
+  // and closing a book without turning a page writes nothing (value-change check).
+  progressDeb.seed(0, static_cast<int>(currentPage), static_cast<int>(xtc->getPageCount()));
+
   // Save current XTC as last opened book and add to recent books
   APP_STATE.openEpubPath = xtc->getPath();
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(xtc->getPath(), xtc->getTitle(), xtc->getAuthor(), xtc->getThumbBmpPath());
+
+  // Position state is fully initialized; render() may now run (and save progress).
+  ready.store(true, std::memory_order_release);
 
   // Trigger first update
   requestUpdate();
@@ -52,6 +59,18 @@ void XtcReaderActivity::onExit() {
 
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
+  // Persist any position the render-path debounce has not written yet (note() also
+  // registers a page turn queued after the last render). The end-of-book sentinel
+  // (currentPage == pageCount) is never noted; the flush writes the debouncer's last
+  // in-bounds page, matching the previous behavior of only saving real pages.
+  if (xtc) {
+    if (currentPage < xtc->getPageCount()) {
+      progressDeb.note(0, static_cast<int>(currentPage), static_cast<int>(xtc->getPageCount()));
+    }
+    if (progressDeb.dirty() && saveProgress(static_cast<uint32_t>(progressDeb.page))) {
+      progressDeb.saved();
+    }
+  }
   xtc.reset();
 }
 
@@ -59,6 +78,15 @@ void XtcReaderActivity::loop() {
   // Enter chapter selection activity
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     if (xtc && xtc->hasChapters() && !xtc->getChapters().empty()) {
+      {
+        // Free the page scratch (up to ~96KB for 2-bit pages) while the chapter
+        // selection child sits on top; renderPage() re-acquires on the next render.
+        // The lock excludes a concurrent render still using the buffer.
+        // ponytail: scratch stays resident during normal reading on no-PSRAM boards;
+        // make the acquire policy per-board if that ceiling ever matters.
+        RenderLock lock(*this);
+        renderer.releaseGrayscaleScratch();
+      }
       startActivityForResult(
           std::make_unique<XtcReaderChapterSelectionActivity>(renderer, mappedInput, xtc, currentPage),
           [this](const ActivityResult& result) {
@@ -119,7 +147,10 @@ void XtcReaderActivity::loop() {
 }
 
 void XtcReaderActivity::render(RenderLock&&) {
-  if (!xtc) {
+  // ready: a stale render-task notification can survive the activity swap and run
+  // before onEnter() completes; bail so we never save page 0 over the real progress
+  // before loadProgress() ran.
+  if (!ready.load(std::memory_order_acquire) || !xtc) {
     return;
   }
 
@@ -133,7 +164,11 @@ void XtcReaderActivity::render(RenderLock&&) {
   }
 
   renderPage();
-  saveProgress();
+  // Debounced progress save: adjacent turns hit the filesystem every
+  // SAVE_INTERVAL-th change, jumps (10-page skip, chapter select) write immediately.
+  if (progressDeb.note(0, static_cast<int>(currentPage), static_cast<int>(xtc->getPageCount()))) {
+    if (saveProgress(currentPage)) progressDeb.saved();
+  }
 }
 
 XtcReaderActivity::StatusBarInfo XtcReaderActivity::getStatusBarInfo() const {
@@ -390,15 +425,17 @@ void XtcReaderActivity::renderPage() {
   LOG_DBG("XTR", "Rendered page %lu/%lu (%u-bit)", currentPage + 1, xtc->getPageCount(), bitDepth);
 }
 
-void XtcReaderActivity::saveProgress() const {
+bool XtcReaderActivity::saveProgress(const uint32_t page) const {
   uint8_t data[4];
-  data[0] = currentPage & 0xFF;
-  data[1] = (currentPage >> 8) & 0xFF;
-  data[2] = (currentPage >> 16) & 0xFF;
-  data[3] = (currentPage >> 24) & 0xFF;
+  data[0] = page & 0xFF;
+  data[1] = (page >> 8) & 0xFF;
+  data[2] = (page >> 16) & 0xFF;
+  data[3] = (page >> 24) & 0xFF;
   if (!ProgressFile::writeAtomic(xtc->getCachePath(), data, sizeof(data))) {
-    LOG_ERR("XTR", "Failed to save progress: page %lu", currentPage);
+    LOG_ERR("XTR", "Failed to save progress: page %lu", page);
+    return false;
   }
+  return true;
 }
 
 void XtcReaderActivity::loadProgress() {

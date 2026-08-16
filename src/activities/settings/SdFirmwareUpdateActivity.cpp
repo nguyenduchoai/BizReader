@@ -55,7 +55,8 @@ void SdFirmwareUpdateActivity::onPickerResult(const ActivityResult& result) {
   }
   requestUpdateAndWait();
 
-  if (!validateFirmware()) {
+  const bool valid = validateFirmware();
+  if (!valid) {
     RenderLock lock(*this);
     state = State::FAILED;
     requestUpdate();

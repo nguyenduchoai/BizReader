@@ -78,6 +78,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
                               const uint8_t paragraphAlignment, const uint16_t viewportWidth,
                               const uint16_t viewportHeight, const bool hyphenationEnabled, const bool embeddedStyle,
                               const uint8_t imageRendering, const bool focusReadingEnabled) {
+  std::lock_guard<std::mutex> lock(readMutex);
   if (!Storage.openFileForRead("SCT", filePath, file)) {
     return false;
   }
@@ -90,7 +91,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
       // Explicit close() required: member variable persists beyond function scope
       file.close();
       LOG_ERR("SCT", "Deserialization failed: Unknown version %u", version);
-      clearCache();
+      clearCacheLocked();
       return false;
     }
 
@@ -121,7 +122,7 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
         imageRendering != fileImageRendering || focusReadingEnabled != fileFocusReadingEnabled) {
       file.close();
       LOG_ERR("SCT", "Deserialization failed: Parameters do not match");
-      clearCache();
+      clearCacheLocked();
       return false;
     }
   }
@@ -135,6 +136,14 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
 
 // Your updated class method (assuming you are using the 'SD' object, which is a wrapper for a specific filesystem)
 bool Section::clearCache() {
+  // External callers (render task on a corrupt page) must hold readMutex so the
+  // file.close() below cannot yank the handle from under a concurrent main-task
+  // reader; loadSectionFile() already holds it and calls clearCacheLocked().
+  std::lock_guard<std::mutex> lock(readMutex);
+  return clearCacheLocked();
+}
+
+bool Section::clearCacheLocked() {
   if (file) file.close();
   if (!Storage.exists(filePath.c_str())) {
     LOG_DBG("SCT", "Cache does not exist, no action needed");
@@ -155,6 +164,11 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
                                 const uint16_t viewportHeight, const bool hyphenationEnabled, const bool embeddedStyle,
                                 const uint8_t imageRendering, const bool focusReadingEnabled,
                                 const std::function<void()>& popupFn) {
+  // Writer side of the readMutex invariant: the member `file` is reopened for write
+  // and seeked throughout; a concurrent reader interleaving seeks would corrupt the
+  // cache. Callees (onPageComplete, writeSectionFileHeader) take no locks, so this
+  // cannot self-deadlock.
+  std::lock_guard<std::mutex> lock(readMutex);
   if (file) file.close();
   const auto localPath = epub->getSpineItem(spineIndex).href;
   const auto tmpHtmlPath = epub->getCachePath() + "/.tmp_" + std::to_string(spineIndex) + ".html";
@@ -314,6 +328,7 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
 }
 
 std::unique_ptr<Page> Section::loadPageFromSectionFile() {
+  std::lock_guard<std::mutex> lock(readMutex);
   if (!file && !Storage.openFileForRead("SCT", filePath, file)) {
     return nullptr;
   }
@@ -330,6 +345,8 @@ std::unique_ptr<Page> Section::loadPageFromSectionFile() {
 }
 
 std::string Section::getTextFromSectionFile() {
+  // No readMutex here: the only member-file access is inside loadPageFromSectionFile(),
+  // which takes the mutex itself (std::mutex is not recursive).
   std::string fullText;
   auto p = this->loadPageFromSectionFile();
   if (p) {

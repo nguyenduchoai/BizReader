@@ -42,6 +42,9 @@ void TxtReaderActivity::onEnter() {
   APP_STATE.saveToFile();
   RECENT_BOOKS.addBook(filePath, fileName, "", "");
 
+  // Setup complete; render() may now run (and index/save progress).
+  ready.store(true, std::memory_order_release);
+
   // Trigger first update
   requestUpdate();
 }
@@ -58,6 +61,12 @@ void TxtReaderActivity::onExit() {
   currentPageLines.clear();
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
+  // Persist any position the render-path debounce has not written yet (note() also
+  // registers a page turn queued after the last render).
+  if (txt && initialized) {
+    progressDeb.note(0, currentPage, totalPages);
+    if (progressDeb.dirty() && saveProgress()) progressDeb.saved();
+  }
   txt.reset();
 }
 
@@ -131,6 +140,10 @@ void TxtReaderActivity::initializeReader() {
 
   // Load saved progress
   loadProgress();
+
+  // Seed the progress-debounce baseline with the position just loaded, so opening
+  // and closing the file without turning a page writes nothing (value-change check).
+  progressDeb.seed(0, currentPage, totalPages);
 
   initialized = true;
 }
@@ -319,7 +332,10 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
 }
 
 void TxtReaderActivity::render(RenderLock&&) {
-  if (!txt) {
+  // ready: a stale render-task notification can survive the activity swap and run
+  // before onEnter() completes; bail so we never index with the previous activity's
+  // orientation or save progress mid-initialization.
+  if (!ready.load(std::memory_order_acquire) || !txt) {
     return;
   }
 
@@ -348,8 +364,11 @@ void TxtReaderActivity::render(RenderLock&&) {
   renderer.clearScreen();
   renderPage();
 
-  // Save progress
-  saveProgress();
+  // Debounced progress save: adjacent turns hit the filesystem every
+  // SAVE_INTERVAL-th change, jumps write immediately.
+  if (progressDeb.note(0, currentPage, totalPages)) {
+    if (saveProgress()) progressDeb.saved();
+  }
 }
 
 void TxtReaderActivity::renderPage() {
@@ -411,9 +430,13 @@ void TxtReaderActivity::renderPage() {
     if (needsBwPrime) {
       ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
     }
+    // Snapshot the cadence so the OOM fallback can undo grayscaleRefreshMode's tick:
+    // one render must consume exactly one refresh-cadence tick, fallback or not.
+    const int cadenceBeforeGrayscale = pagesUntilFullRefresh;
     const auto mode =
         needsBwPrime ? HalDisplay::FAST_REFRESH : ReaderUtils::grayscaleRefreshMode(pagesUntilFullRefresh);
     if (!ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); }, mode) && !needsBwPrime) {
+      pagesUntilFullRefresh = cadenceBeforeGrayscale;
       ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
     }
   } else {
@@ -431,7 +454,7 @@ void TxtReaderActivity::renderStatusBar() const {
   GUI.drawStatusBar(renderer, progress, currentPage + 1, totalPages, title);
 }
 
-void TxtReaderActivity::saveProgress() const {
+bool TxtReaderActivity::saveProgress() const {
   uint8_t data[4];
   data[0] = currentPage & 0xFF;
   data[1] = (currentPage >> 8) & 0xFF;
@@ -439,7 +462,9 @@ void TxtReaderActivity::saveProgress() const {
   data[3] = 0;
   if (!ProgressFile::writeAtomic(txt->getCachePath(), data, sizeof(data))) {
     LOG_ERR("TRS", "Failed to save progress: page %d", currentPage);
+    return false;
   }
+  return true;
 }
 
 void TxtReaderActivity::loadProgress() {

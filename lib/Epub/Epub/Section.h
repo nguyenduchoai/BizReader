@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -15,11 +16,21 @@ class Section {
   GfxRenderer& renderer;
   std::string filePath;
   HalFile file;
+  // Serializes seek->read/write sequences on the shared member `file` handle
+  // (loaders, clearCache, and the createSectionFile writer); interleaved seeks
+  // would deserialize garbage and nuke the section cache. The render-task paths
+  // are additionally serialized by the rendering mutex at the activity layer
+  // (main-task callers like bookmark text / QR display take a RenderLock before
+  // touching the section). Same pattern as BookMetadataCache::readMutex.
+  // Lock order: always inner to the rendering mutex, outer to the storage mutex.
+  std::mutex readMutex;
 
   void writeSectionFileHeader(int fontId, float lineCompression, bool extraParagraphSpacing, uint8_t paragraphAlignment,
                               uint16_t viewportWidth, uint16_t viewportHeight, bool hyphenationEnabled,
                               bool embeddedStyle, uint8_t imageRendering, bool focusReadingEnabled);
   uint32_t onPageComplete(std::unique_ptr<Page> page);
+  // Body of clearCache() without taking readMutex; for callers already holding it.
+  bool clearCacheLocked();
 
  public:
   uint16_t pageCount = 0;

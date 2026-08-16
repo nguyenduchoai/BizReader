@@ -82,6 +82,7 @@ void ActivityManager::loop() {
       // Destroy the current activity
       exitActivity(lock);
       pendingAction = PendingAction::None;
+      clearStaleRenderNotifications();
 
       if (stackActivities.empty()) {
         LOG_DBG("ACT", "No more activities on stack, going home");
@@ -132,6 +133,7 @@ void ActivityManager::loop() {
       }
       pendingAction = PendingAction::None;
       currentActivity = std::move(pendingActivity);
+      clearStaleRenderNotifications();
 
       lock.unlock();  // onEnter may acquire its own lock
       currentActivity->onEnter();
@@ -155,6 +157,28 @@ void ActivityManager::exitActivity(const RenderLock& lock) {
   if (currentActivity) {
     currentActivity->onExit();
     currentActivity.reset();
+  }
+}
+
+void ActivityManager::clearStaleRenderNotifications() {
+  // Must be called with the RenderLock held during an activity swap. Notifications
+  // accumulated for the outgoing activity would otherwise survive the swap and let
+  // the render task call the incoming activity's render() before onEnter() has
+  // initialized it. Safe to drop: the take side (ulTaskNotifyTake(pdTRUE)) treats
+  // the value as "render at least once", every notification pending here targeted
+  // the old activity, and each swap path re-requests an update afterwards. All
+  // requestUpdateAndWait() callers run on the main task (which is executing this
+  // swap), so no waiter can be starved by the clear.
+  //
+  // Residual window this does NOT cover: a render task that already consumed its
+  // notification and is parked on the rendering mutex during the swap. Once the
+  // swap releases the lock, that render runs against the NEW activity concurrently
+  // with its onEnter(). Activities whose render() dereferences state initialized in
+  // onEnter() or writes persistent state (e.g. progress files) must therefore carry
+  // their own readiness guard (see the readers' `positionLoaded` / `ready` flags).
+  if (renderTaskHandle) {
+    xTaskNotifyStateClear(renderTaskHandle);
+    ulTaskNotifyValueClear(renderTaskHandle, ULONG_MAX);
   }
 }
 

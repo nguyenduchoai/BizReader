@@ -16,6 +16,34 @@ constexpr unsigned long SKIP_HOLD_MS = 700;
 constexpr unsigned long BOOKMARK_HOLD_MS = 400;
 constexpr unsigned long BOOKMARK_MESSAGE_DURATION_MS = 2500;
 
+// Debounced progress.bin persistence shared by Epub/Txt/Xtc readers.
+// note() returns true when the caller must write NOW: any non-adjacent change
+// (spine changed or |delta page| > 1) flushes immediately so crashes/battery
+// pulls never lose a jump; adjacent turns write every SAVE_INTERVAL-th change.
+// Caller calls saved() only on successful write so the onExit flush retries failures.
+struct ProgressDebouncer {
+  static constexpr uint8_t SAVE_INTERVAL = 5;
+  int spine = -1, page = -1, pageCount = -1;
+  uint8_t unsaved = 0;
+  void seed(int s, int p, int pc) {
+    spine = s;
+    page = p;
+    pageCount = pc;
+    unsaved = 0;
+  }
+  bool note(int s, int p, int pc) {
+    if (s == spine && p == page && pc == pageCount) return false;
+    const bool jump = (s != spine) || (p > page + 1) || (p < page - 1);
+    spine = s;
+    page = p;
+    pageCount = pc;
+    if (unsaved < 0xFF) ++unsaved;
+    return jump || unsaved >= SAVE_INTERVAL;
+  }
+  bool dirty() const { return spine >= 0 && unsaved != 0; }
+  void saved() { unsaved = 0; }
+};
+
 inline void applyOrientation(GfxRenderer& renderer, const uint8_t orientation) {
   switch (orientation) {
     case CrossPointSettings::ORIENTATION::PORTRAIT:
