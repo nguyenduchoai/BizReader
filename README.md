@@ -1,5 +1,22 @@
 # BizReader
 
+## Trạng thái dự án: chỉ dùng làm lịch
+
+Từ **04/10/2026**, dừng phát triển app Android và trình đọc sách. Thiết bị hiện
+dùng firmware **lịch, đồng hồ RTC và thời tiết TP.HCM**. Mã trình đọc và app
+trong repo được giữ để lưu trữ, không phải firmware đang chạy trên máy.
+
+- [Mã nguồn bản lịch, hướng dẫn build và nạp](patches/weather-dashboard/README.md)
+- [Kết quả kiểm tra trên thiết bị và các giới hạn](patches/weather-dashboard/VERIFICATION.md)
+
+Bản lịch có lịch tháng, âm lịch Việt Nam, đồng hồ đổi mỗi phút, dự báo thời
+tiết và lề an toàn 28 px. Không có ghi chú hoặc việc cần làm. Wi-Fi/API key
+được cấu hình riêng trên thiết bị, không lưu trong repo. Nguồn được lưu dưới
+dạng bản vá trên commit LilyGo cố định; không dùng lệnh build trình đọc bên
+dưới để dựng bản lịch.
+
+## Tài liệu trình đọc trước đây (lưu trữ)
+
 BizReader là nền tảng đọc sách cho **LilyGo T5 ePaper S3 / T5S3 4.7 inch
 (EPD47 v2.4, ESP32-S3 N16R8)**, gồm firmware trên máy đọc và ứng dụng Android
 đồng hành. Dự án kế thừa lõi đọc EPUB của

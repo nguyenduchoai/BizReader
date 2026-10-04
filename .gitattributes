@@ -3,3 +3,6 @@
 apps/bizreader_connect/android/app/src/main/assets/viewer/** -whitespace
 apps/bizreader_connect/packages/flutter_epub_viewer/** -whitespace
 apps/bizreader_connect/packages/flutter_inappwebview_android/** -whitespace
+
+# Preserve upstream CRLF/context bytes in the archived source patch.
+patches/weather-dashboard/weather-dashboard.patch -text -whitespace
