@@ -8,9 +8,11 @@ trong repo được giữ để lưu trữ, không phải firmware đang chạy 
 
 - [Mã nguồn bản lịch, hướng dẫn build và nạp](patches/weather-dashboard/README.md)
 - [Kết quả kiểm tra trên thiết bị và các giới hạn](patches/weather-dashboard/VERIFICATION.md)
+- [Giao diện dọc ngày 09/10/2026](patches/weather-dashboard/PORTRAIT_2026-10-09.md)
 
-Bản lịch có lịch tháng, âm lịch Việt Nam, đồng hồ đổi mỗi phút, dự báo thời
-tiết và lề an toàn 28 px. Không có ghi chú hoặc việc cần làm. Wi-Fi/API key
+Bản mới dùng giao diện dọc: giờ lớn và ngày dương/âm ở nửa trên, thời tiết
+hiện tại ở giữa, dự báo theo giờ ở dưới; đã bỏ lịch tháng. Đồng hồ đổi mỗi
+phút, giữ lề an toàn 28 px. Không có ghi chú hoặc việc cần làm. Wi-Fi/API key
 được cấu hình riêng trên thiết bị, không lưu trong repo. Nguồn được lưu dưới
 dạng bản vá trên commit LilyGo cố định; không dùng lệnh build trình đọc bên
 dưới để dựng bản lịch.

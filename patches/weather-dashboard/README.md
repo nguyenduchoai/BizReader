@@ -13,13 +13,22 @@ nạp lại hoặc đánh giá mức độ hoàn thiện.
 - Commit nền: `3aea8d0a8c8a024291bba38e6da805f02acbb188`
 - Bản vá: `weather-dashboard.patch` trong cùng thư mục.
 
-Bản tuỳ chỉnh có lịch tháng, âm lịch Việt Nam, đồng hồ mỗi phút, dự báo mưa,
-nhãn tiếng Việt, khoảng lề chống che chữ và trang cài đặt nhúng trong firmware.
+Bản tuỳ chỉnh từ **09/10/2026** dùng giao diện dọc **540 × 960**: nửa trên là
+giờ lớn, ngày dương và âm lịch; giữa là thời tiết hiện tại với nhiệt độ, mây,
+độ ẩm, gió và biểu tượng; dưới là bốn mốc dự báo theo giờ. Đã bỏ lịch tháng.
+Dữ liệu dự báo hiện có các mốc cách nhau ba giờ, hiển thị theo giờ Việt Nam.
+Đồng hồ đổi mỗi phút, có nhãn tiếng Việt, lề 28 px và trang cài đặt nhúng.
 RTC lưu UTC; giao diện hiển thị UTC+7. Các kiểm thử trên máy tính không thay thế
 việc kiểm tra lưu bóng, chất lượng làm mới và thời lượng pin trên thiết bị thật.
 Thiết bị không cần máy tính đang đọc USB để khởi động hoặc đi ngủ. Không có
 luồng ngủ phụ thuộc `Serial.flush()`. Dữ liệu đệm và cấu hình chỉ được đổi tên
 sau khi đóng tệp ghi, mở lại và xác minh toàn bộ nội dung đã lưu.
+
+![Giao diện dọc với dữ liệu mẫu](portrait-preview.png)
+
+Ảnh trên được dựng từ mã firmware và dữ liệu mẫu. Xem
+[kiểm tra bản dọc ngày 09/10/2026](PORTRAIT_2026-10-09.md) để phân biệt kết quả
+build/kiểm thử trên máy tính với kết quả chạy trên thiết bị thật.
 
 **Không có SSID, mật khẩu Wi-Fi hay API key trong bản vá.** Cấu hình riêng trên
 thiết bị được giữ nguyên khi chỉ nạp vùng ứng dụng. Không đưa bản sao flash,
@@ -82,6 +91,8 @@ clang++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined tests/weat
 /tmp/weather-state-test
 clang++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -I tests/rtc_stubs tests/weather_rtc_test.cpp -o /tmp/weather-rtc-test
 /tmp/weather-rtc-test
+clang++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined tests/weather_portrait_test.cpp -o /tmp/weather-portrait-test
+/tmp/weather-portrait-test
 python3 tests/preview/render_dashboard.py
 python3 tests/preview/check_dashboard_cases.py
 python3 tests/preview/render.py
@@ -104,6 +115,13 @@ và executable cục bộ; những tệp này không nằm trong bản vá. Scri
 `--font /duong-dan/NotoSans-Bold.ttf` khi chạy ngoài checkout BizReader.
 Giấy phép font được giữ trong `NOTO_FONT_LICENSE.txt`.
 
+Font đồng hồ chỉ chứa chữ số và dấu phân cách. Khi tạo lại font:
+
+```sh
+python3 scripts/generate_vi_font.py --font /duong-dan/NotoSans-Bold.ttf --size 80 --name NotoClock80B --characters='-0123456789:' > noto_clock_80b.h
+python3 scripts/generate_vi_font.py --font /duong-dan/NotoSans-Bold.ttf --size 16 --name NotoSansVi16B > noto_sans_vi_16b.h
+```
+
 ## Manifest Nguồn
 
 Danh sách này là đầu vào cho bước tạo lại bản vá, không tự quét các tệp build.
@@ -123,16 +141,20 @@ lunar_calendar.h
 noto_sans_vi_8b.h
 noto_sans_vi_10b.h
 noto_sans_vi_12b.h
+noto_sans_vi_16b.h
+noto_clock_80b.h
 partitions-bizreader.csv
 settings_page.h
 weather_dashboard.h
 weather_rtc.h
 weather_runtime.h
 weather_state.h
+weather_portrait.h
 scripts/generate_vi_font.py
 tests/lunar_calendar_test.cpp
 tests/weather_rtc_test.cpp
 tests/weather_state_test.cpp
+tests/weather_portrait_test.cpp
 tests/monitor_cycles.py
 tests/test_monitor_cycles.py
 tests/check_cache_persistence.py

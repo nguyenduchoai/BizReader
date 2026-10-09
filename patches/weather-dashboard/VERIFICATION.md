@@ -1,5 +1,9 @@
 # Kiểm tra bản thời tiết và lịch ngày 04/10/2026
 
+Biên bản này ghi nhận **bản ngang đã nạp ngày 04/10/2026**. Nguồn hiện tại đã
+đổi sang bản dọc; xem [kiểm tra ngày 09/10/2026](PORTRAIT_2026-10-09.md).
+Hash và số đo bên dưới thuộc bản ngang, không dùng để xác nhận bản dọc đã nạp.
+
 ## Thiết bị và bản nạp
 
 - LilyGo T5-4.7-S3 V2.4, ESP32-S3 N16R8, màn hình 960 × 540, RTC PCF8563.
